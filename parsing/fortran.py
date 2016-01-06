@@ -1,37 +1,35 @@
 from argparse import ArgumentParser
 
-from . import alphanumeric, letter, digit, space, whitespace
+from . import alphanumeric, letter, digit, one_of, whitespace, none_of
+from . import Failure, succeed, matches
+from . import join, exact, token, satisfies, singleton, EOF
 
-from . import Failure, succeed
-
-from . import one_of, digits, join, terminal, token
-
-special = one_of(" =+-*/().,$':")
+special = one_of(" =+-*/().,$'\":")
 name = letter + ~alphanumeric // join
 label = digit.between(1, 5) // join
 
-def key(string):
-    return token(terminal(string))
+
+def keyword(string):
+    return token(exact(string))
 
 def read_file(filename):
     with open(filename) as fl:
-        return [Line(ln + 1, line) for ln, line in enumerate(fl)]
+        return [Line(line) for line in fl]
 
 class Line(object):
-    def __init__(self, ln, line):
-        self.ln = ln
+    def __init__(self, line):
         self.original = line
 
         lowered = line.rstrip().lower()
-        self.lowered = lowered
 
         cont = 5
         margin = cont + 1
-        if len(lowered) == 0 or lowered[0] == '*' or lowered[0] == 'c' or lowered[0] == '!':
+
+        if matches(EOF | one_of("*c") | keyword("!"), lowered):
             self.type = "comment"
             return
 
-        if len(lowered) > cont and lowered[cont] != " " and lowered[cont] != '0':
+        if len(lowered) > cont and matches(none_of("0 "), lowered, cont):
             self.type = "continuation"
             assert len(lowered[:cont].strip()) == 0
             self.code = line[margin:]
@@ -41,102 +39,102 @@ class Line(object):
 
         statement_label = lowered[:cont]
         if len(statement_label.strip()) > 0:
-            self.label = (token(label) // int).parse(lowered[:cont]).value
+            self.label = (token(label) // int).value(statement_label)
 
         self.code = line[margin:]
 
-        self.statement = 'none'
-        
         def check(words):
             msg = succeed(" ".join(words))
-            parsers = map(key, words)
+            parsers = map(keyword, words)
 
             parser = parsers[0]
             for i in range(1, len(words)):
                 parser = parser + parsers[i]
 
             try:
-                self.statement = (parser >> msg).parse(self.code).value
+                self.statement = (parser >> msg).value(self.code)
+                raise StopIteration()
             except Failure:
                 pass
 
-            if self.statement != 'none':
-                raise StopIteration()
+        statements = [['assign'], ['go', 'to'], ['if'], ['else', 'if'], ['else'],
+                       ['end', 'if'], ['continue'], ['stop'], ['pause'], ['do'],
+                       ['end', 'do'], ['read'], ['write'], ['print'], ['rewind'],
+                       ['backspace'], ['end', 'file'], ['open'], ['close'], ['inquire'],
+                       ['call'], ['return'], ['program'], ['end', 'program'],
+                       ['function'], ['end', 'function'], ['subroutine'],
+                       ['end', 'subroutine'], ['entry'], ['block', 'data'],
+                       ['dimension'], ['common'], ['equivalence'], ['implicit'],
+                       ['parameter'], ['external'], ['intrinsic'], ['save'],
+                       ['integer'], ['real'], ['double', 'precision'], ['complex'],
+                       ['logical'], ['character'], ['data'], ['format'], ['end']]
 
         try:
-            check(['assign'])
-            check(['go', 'to'])
-            check(['if'])
-            check(['else', 'if'])
-            check(['else'])
-            check(['end', 'if'])
-            check(['continue'])
-            check(['stop'])
-            check(['pause'])
-            check(['do'])
-            check(['end', 'do'])
-            check(['read'])
-            check(['write'])
-            check(['print'])
-            check(['rewind'])
-            check(['backspace'])
-            check(['end', 'file'])
-            check(['open'])
-            check(['close'])
-            check(['inquire'])
-            check(['call'])
-            check(['return'])
-            check(['program'])
-            check(['end', 'program'])
-            check(['function'])
-            check(['end', 'function'])
-            check(['subroutine'])
-            check(['end', 'subroutine'])
-            check(['entry'])
-            check(['block', 'data'])
-            check(['dimension'])
-            check(['common'])
-            check(['equivalence'])
-            check(['implicit'])
-            check(['parameter'])
-            check(['external'])
-            check(['intrinsic'])
-            check(['save'])
-            check(['integer'])
-            check(['real'])
-            check(['double', 'precision'])
-            check(['complex'])
-            check(['logical'])
-            check(['character'])
-            check(['data'])
-            check(['format'])
-            check(['end'])
+            for word in statements:
+                check(word)
         except StopIteration:
             return
-
-        try:
-            value = key("!").parse(self.code).value
-            del self.code
-            del self.statement
-            self.type = "comment"
-            return
-        except Failure:
-            pass
 
         self.statement = 'assignment'
 
     def __repr__(self):
         orig = self.original.rstrip()
         if self.type == "comment":
-            return "comment: " + orig
+            return "{:23s}: {}".format("comment", orig)
 
         code = self.code.rstrip()
         if self.type == "continuation":
-            return "continuation: " + code
+            return "{:23s}: {}".format("continuation", code)
 
         if hasattr(self, 'label'):
-            return self.statement + ": " + str(self.label) + " -> " + code
-        return self.statement + ": " + code
+            return "{:15s}[{:>5d}] : {}".format(self.statement, self.label, code)
+        return "{:23s}: {}".format(self.statement, code)
+
+    def __str__(self):
+        return self.original
+
+
+class LogicalLine(object):
+    def __init__(self, lines):
+        initial_line = [l for l in lines if l.type == 'initial']
+        assert len(initial_line) == 1
+        initial_line = initial_line[0]
+        
+        self.lines = lines
+        self.statement = initial_line.statement
+
+        if hasattr(initial_line, 'label'):
+            self.label = initial_line.label
+
+        self.code = "".join([l.code for l in lines if l.type != 'comment'])
+
+    def __repr__(self):
+        result = ''
+
+        if hasattr(self, 'label'):
+            result += "{} statement with label {}:\n-\n".format(self.statement, self.label)
+        else:
+            result += "{} statement:\n-\n".format(self.statement)
+
+        result += "".join([l.original for l in self.lines]) + "---\n"
+        result += self.code
+
+        return result + "-------"
+
+    def __str__(self):
+        return "".join(map(str, self.lines))
+        
+
+def parse_into_logical_lines(lines):
+    comment = satisfies(lambda l: l.type == 'comment', 'comment')
+    continuation = satisfies(lambda l: l.type == 'continuation', 'continuation')
+    initial = satisfies(lambda l: l.type == 'initial', 'initial')
+
+    logical_line = (~comment + initial // singleton 
+                + ~(comment | continuation) 
+                + ~comment) // LogicalLine
+
+    return (~logical_line).value(lines)
 
 
 def _argument_parser_():
@@ -144,8 +142,18 @@ def _argument_parser_():
     parser.add_argument("filename")
     return parser
 
+# empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
+# remove_blanks = ~(+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, ""))
+
 if __name__ == '__main__':
     args = _argument_parser_().parse_args()
 
-    for l in read_file(args.filename):
-        print l
+    raw_lines = read_file(args.filename)
+# raw_nel = remove_blanks.value(raw_lines)
+
+#    for l in raw_nel:
+#        print str(l),
+
+    logical_lines = parse_into_logical_lines(read_file(args.filename))
+    print "\n".join([repr(l) for l in logical_lines])
+    

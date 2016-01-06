@@ -1,8 +1,11 @@
 
 def location(text, index):
-    line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
-    column = index - (start + 1)
-    return "{}:{}".format(line + 1, column + 1)
+    if isinstance(text, str):
+        line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
+        column = index - (start + 1)
+        return "{}:{}".format(line + 1, column + 1)
+    else:
+        return str(index + 1)
 
 
 class Failure(Exception):
@@ -51,6 +54,10 @@ class parser(object):
     def parse(self, text, start=0):
         '''apply the parser to `text` at position `start`'''
         return self.me(text, start)
+
+    def value(self, text, start=0):
+        '''apply the parser and return the success value'''
+        return self.parse(text, start).value
 
     def bind(self, function):
         '''the `function`, given a `Success` object, should return a parser
@@ -253,7 +260,7 @@ def succeed(value):
     return parser(lambda text, start: Success(text, start, start, value))
 
 
-def terminal(string):
+def exact(string):
     '''only matches the exact `string`'''
     @parser 
     def inner(text, start):
@@ -288,7 +295,7 @@ def singleton(string):
     return [string]
 
 
-def satisfy(predicate, desc):
+def satisfies(predicate, desc):
     '''recognize a character satisfying given `predicate`'''
     @parser
     def inner(text, start):
@@ -301,46 +308,42 @@ def satisfy(predicate, desc):
 
 def one_of(ls):
     '''recognize any of the given characters'''
-    return satisfy(lambda c: c in ls, "one of {}".format(ls))
+    return satisfies(lambda c: c in ls, "one of {}".format(ls))
 
 
 def none_of(ls):
     '''consumes a character that is not on the list `ls`'''
-    return satisfy(lambda c: c not in ls, "none of {}".format(ls))
+    return satisfies(lambda c: c not in ls, "none of {}".format(ls))
 
 
-#def join(zero=None):
-#    '''join for a monoid'''
-#    if zero is None:
-#        zero = ''
+#def join_list(ls):
+#    '''join for a list'''
+#    result = []
 #
-#    def inner(ls):
-#        result = zero
+#    for e in ls:
+#        result += e
 #
-#        for e in ls:
-#            result += e
-#
-#        return result
-#    return inner
+#    return result
+
 def join(ls):
     return "".join(ls)
 
 
-space = satisfy(lambda c: c.isspace(), "whitespace")
+space = satisfies(lambda c: c.isspace(), "whitespace")
 
 spaces = (+space // join) % "whitespaces"
 
 whitespace = (~space // join) % "optional whitespace"
 
-letter = satisfy(lambda c: c.isalpha(), "letter")
+letter = satisfies(lambda c: c.isalpha(), "letter")
 
 word = (+letter // join) % "word"
 
-digit = satisfy(lambda c: c.isdigit(), "digit")
+digit = satisfies(lambda c: c.isdigit(), "digit")
 
 digits = (+digit // join) % "digits"
 
-alphanumeric = satisfy(lambda c: c.isalnum(), "alphanumeric")
+alphanumeric = satisfies(lambda c: c.isalnum(), "alphanumeric")
 
 alphanumerics = (+alphanumeric // join) % "alphanumerics"
 
@@ -362,6 +365,13 @@ def token(me):
     '''no fuss about surrounding whitespace'''
     return whitespace >> me << whitespace 
 
+
+def matches(me, text, start=0):
+    try:
+        _ = me.parse(text, start)
+        return True
+    except Failure:
+        return False
 
 # not sure about this
 import re

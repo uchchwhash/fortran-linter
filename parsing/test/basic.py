@@ -1,5 +1,5 @@
 import unittest
-from .. import terminal, Failure, EOF, singleton, fail, succeed, join, regex
+from .. import exact, Failure, EOF, singleton, fail, succeed, join, regex
 from .. import space, spaces, letter, word, digit, digits, one_of, none_of
 
 class TestBasic(unittest.TestCase):
@@ -21,13 +21,13 @@ class TestBasic(unittest.TestCase):
         if start is not None:
             self.assertEqual(failure.exception.start, start)
 
-    def test_terminal(self):
+    def test_exact(self):
         text = "this"
 
-        self.match(terminal("this"), text, text, len(text))
-        self.match(terminal("th"), text, "th", len("th"))
+        self.match(exact("this"), text, text, len(text))
+        self.match(exact("th"), text, "th", len("th"))
 
-        self.fail(terminal("is"), text, repr("is"), 0)
+        self.fail(exact("is"), text, repr("is"), 0)
 
 
     def test_succeed(self):
@@ -38,31 +38,31 @@ class TestBasic(unittest.TestCase):
     def test_ignore(self):
         text = "hello world"
 
-        test = terminal("hello") >> terminal(" ") >> terminal("world")
+        test = exact("hello") >> exact(" ") >> exact("world")
         self.match(test, text, "world", len(text))
         self.match(test >> succeed("!"), text, "!", len(text))
         self.match(test >> EOF, text, None, len(text))
 
-        self.fail(terminal("hello") >> EOF, text, "<EOF>", len("hello"))
+        self.fail(exact("hello") >> EOF, text, "<EOF>", len("hello"))
 
 
     def test_choice(self):
         text = "mocha"
 
-        test = terminal("mocha") ^ terminal("latte")
+        test = exact("mocha") ^ exact("latte")
         self.match(test, text, "mocha", len("mocha"))
 
-        test = terminal("latte") ^ terminal("mocha")
+        test = exact("latte") ^ exact("mocha")
         self.match(test, text, "mocha", len("mocha"))
 
-        test = terminal("hi") ^ terminal("there")
+        test = exact("hi") ^ exact("there")
         self.fail(test, text, repr("there"), 0)
 
     def test_try_choice(self):
         text = "interpol"
 
-        p = terminal("inter") >> terminal("national")
-        q = terminal("inter") >> terminal("pol") >> succeed("police")
+        p = exact("inter") >> exact("national")
+        q = exact("inter") >> exact("pol") >> succeed("police")
         test = p | q 
         
         self.match(test, text, "police", len("interpol")) 
@@ -70,8 +70,8 @@ class TestBasic(unittest.TestCase):
     def test_label(self):
         text = "rising sun"
 
-        p = terminal("rising") >> terminal(" ")
-        q = (terminal("venus") | terminal("mercury")) % "planet"
+        p = exact("rising") >> exact(" ")
+        q = (exact("venus") | exact("mercury")) % "planet"
         test = p >> q
 
         self.fail(test, text, "planet", len("rising "))
@@ -80,8 +80,8 @@ class TestBasic(unittest.TestCase):
     def test_map(self):
         text = "hello world"
 
-        p = terminal("hello") // singleton
-        q = (terminal(" ") >> terminal("world")) // singleton
+        p = exact("hello") // singleton
+        q = (exact(" ") >> exact("world")) // singleton
         test = p + q 
 
         self.match(test, text, ["hello", "world"])
@@ -89,22 +89,22 @@ class TestBasic(unittest.TestCase):
     def test_many(self):
         text = "AAAABBBBCCCC"
 
-        test = terminal("A").between(2, 5)
+        test = exact("A").between(2, 5)
         self.match(test, text, ['A'] * 4, 4)
 
-        test = terminal("A") * 3
+        test = exact("A") * 3
         self.match(test, text, ['A'] * 3, 3)
 
-        test = terminal("A") * 5
+        test = exact("A") * 5
         self.fail(test, text, repr('A'), 4)
 
-        test = terminal("A") * 3 + -terminal("A") + ~terminal("A") + ~terminal("B")
+        test = exact("A") * 3 + -exact("A") + ~exact("A") + ~exact("B")
         self.match(test, text, ['A'] * 4 + ['B'] * 4, 8)
 
-        test = ~terminal("A") + -terminal("D") + +terminal("B")
+        test = ~exact("A") + -exact("D") + +exact("B")
         self.match(test, text, ['A'] * 4 + ['B'] * 4, 8)
 
-        test = ~terminal("A") + +terminal("D")
+        test = ~exact("A") + +exact("D")
         self.fail(test, text, repr('D'), 4)
 
 
@@ -126,7 +126,7 @@ class TestBasic(unittest.TestCase):
     def test_regex(self):
         text = "email me at someone@example.com"
 
-        test = terminal("email me at") >> spaces >> regex(r"(\w+)@(\w+)\.(\w+)")
+        test = exact("email me at") >> spaces >> regex(r"(\w+)@(\w+)\.(\w+)")
         match = test.parse(text)
         self.assertEqual(match.value.groups(0), ("someone", "example", "com"))
 
