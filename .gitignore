@@ -1,3 +1,4 @@
+*.swp
 *.pdf
 *.pyc
 parsing/old.py

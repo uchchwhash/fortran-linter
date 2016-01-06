@@ -4,17 +4,50 @@ from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches
 from . import join, exact, token, satisfies, singleton, EOF
 
+
+control_statements = [['go', 'to'], ['if'], ['else', 'if'], ['else'],
+               ['end', 'if'], ['continue'], ['stop'], ['pause'], ['do'],
+               ['end', 'do'],
+               ['call'], ['return'], ['end']]
+
+io_statements =  [['read'], ['write'], 
+        ['print'], ['rewind'],
+               ['backspace'], ['endfile'], ['open'], ['close'], ['inquire']]
+
+executable_statements = control_statements + [['assign']] + io_statements
+
+
+type_statements = [['integer'], ['real'], 
+               ['double', 'precision'], ['complex'], ['logical'], ['character']]
+
+specification_statements = type_statements + [['dimension'], ['common'], 
+               ['equivalence'], ['implicit'], ['parameter'], ['external'], 
+               ['intrinsic'], ['save']]
+
+non_executable_statements = specification_statements + [['program'], ['end', 'program'],
+               ['function'], ['end', 'function'], ['subroutine'],
+               ['end', 'subroutine'], ['block', 'data'],
+               ['end', 'block', 'data'],   
+               ['entry'], ['data'], ['format']] 
+
+# order is important here
+statements = non_executable_statements + executable_statements
+
 special = one_of(" =+-*/().,$'\":")
 name = letter + ~alphanumeric // join
 label = digit.between(1, 5) // join
 
-
 def keyword(string):
     return token(exact(string))
 
-def read_file(filename):
-    with open(filename) as fl:
-        return [Line(line) for line in fl]
+def one_of_list(names):
+    if len(names) == 0:
+        return "nothing"
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return names[0] + " or " + names[1]
+    return "one of " + ", ".join(names[:-1]) + " or " + names[-1]
 
 class Line(object):
     def __init__(self, line):
@@ -45,7 +78,7 @@ class Line(object):
 
         def check(words):
             msg = succeed(" ".join(words))
-            parsers = map(keyword, words)
+            parsers = [keyword(w) for w in words]
 
             parser = parsers[0]
             for i in range(1, len(words)):
@@ -57,21 +90,9 @@ class Line(object):
             except Failure:
                 pass
 
-        statements = [['assign'], ['go', 'to'], ['if'], ['else', 'if'], ['else'],
-                       ['end', 'if'], ['continue'], ['stop'], ['pause'], ['do'],
-                       ['end', 'do'], ['read'], ['write'], ['print'], ['rewind'],
-                       ['backspace'], ['end', 'file'], ['open'], ['close'], ['inquire'],
-                       ['call'], ['return'], ['program'], ['end', 'program'],
-                       ['function'], ['end', 'function'], ['subroutine'],
-                       ['end', 'subroutine'], ['entry'], ['block', 'data'],
-                       ['dimension'], ['common'], ['equivalence'], ['implicit'],
-                       ['parameter'], ['external'], ['intrinsic'], ['save'],
-                       ['integer'], ['real'], ['double', 'precision'], ['complex'],
-                       ['logical'], ['character'], ['data'], ['format'], ['end']]
-
         try:
-            for word in statements:
-                check(word)
+            for words in statements:
+                check(words)
         except StopIteration:
             return
 
@@ -122,13 +143,15 @@ class LogicalLine(object):
         return result + "-------"
 
     def __str__(self):
-        return "".join(map(str, self.lines))
-        
+        return "".join([str(l) for l in self.lines])
+
 
 def parse_into_logical_lines(lines):
-    comment = satisfies(lambda l: l.type == 'comment', 'comment')
-    continuation = satisfies(lambda l: l.type == 'continuation', 'continuation')
-    initial = satisfies(lambda l: l.type == 'initial', 'initial')
+    def of_type(type_name):
+        return satisfies(lambda l: l.type == type_name, type_name)
+
+    comment, continuation, initial = (of_type(t) 
+            for t in ['comment', 'continuation', 'initial'])
 
     logical_line = (~comment + initial // singleton 
                 + ~(comment | continuation) 
@@ -137,23 +160,69 @@ def parse_into_logical_lines(lines):
     return (~logical_line).value(lines)
 
 
+def parse_source(logical_lines):
+    def one_of(names):
+        return satisfies(lambda l: l.statement in names, 
+                one_of_list(names))
+
+    def none_of(names):
+        return satisfies(lambda l: l.statement not in names, 
+                one_of_list(names))
+
+    function = ((one_of(["function"]) // singleton 
+                + ~(none_of(["end", "end function"]))
+                + one_of(["end", "end function"]) // singleton) 
+                    // (lambda x: {"function": x}))
+
+    subroutine = ((one_of(["subroutine"]) // singleton
+                + ~(none_of(["end", "end subroutine"]))
+                + one_of(["end", "end subroutine"]) // singleton)
+                    // (lambda x: {"subroutine": x}))
+
+    block_data = ((one_of(["block data"]) // singleton 
+                + ~(none_of(["end", "end block data"]))
+                + one_of(["end", "end block data"]) // singleton)
+                    // (lambda x: {"block data": x}))
+
+    subprogram = function | subroutine | block_data
+
+    main_program = ((-one_of(["program"])
+            + ~(none_of(["end", "end program"]))
+            + one_of(["end", "end program"]) // singleton)
+                    // (lambda x: {"program": x}))
+
+    program_unit = subprogram | main_program
+
+    return (~program_unit).value(logical_lines)
+
+# empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
+# remove_blanks = ~(+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, ""))
+
 def _argument_parser_():
     parser = ArgumentParser()
     parser.add_argument("filename")
     return parser
 
-# empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
-# remove_blanks = ~(+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, ""))
+def read_file(filename):
+    with open(filename) as fl:
+        return [Line(line) for line in fl]
 
 if __name__ == '__main__':
     args = _argument_parser_().parse_args()
 
     raw_lines = read_file(args.filename)
-# raw_nel = remove_blanks.value(raw_lines)
-
-#    for l in raw_nel:
-#        print str(l),
-
     logical_lines = parse_into_logical_lines(read_file(args.filename))
-    print "\n".join([repr(l) for l in logical_lines])
+
+    parsed = parse_source(logical_lines)
+    for l in parsed:
+        for key, value in l.iteritems():
+            print ">", key, "<"
+
+            for ll in value:
+                print str(ll),
+            
+        print
+        print
+
+
     
