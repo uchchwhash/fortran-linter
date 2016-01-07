@@ -1,3 +1,13 @@
+debugging = [False]
+
+def set_debug(on):
+    debugging[0] = on
+
+def debug(msg):
+    if debugging[0]:
+        print msg
+
+
 def location(text, index):
     if isinstance(text, str):
         line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
@@ -52,7 +62,16 @@ class parser(object):
 
     def scan(self, text, start=0):
         '''apply the parser to `text` at position `start`'''
+
+        def loc(pos, msg):
+            if pos >= len(text):
+                return msg + " at {} ".format(pos) + " on EOF"
+            else:
+                return msg + " at {} ".format(pos) + " on {}".format(text[pos])
+
+        debug(loc(start, "entering scan"))
         result = self.me(text, start)
+        debug(loc(result.end, "leaving scan with value {}".format(repr(result.value))))
         return result
 
     def parse(self, text, start=0):

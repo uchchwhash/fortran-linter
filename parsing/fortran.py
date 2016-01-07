@@ -1,6 +1,7 @@
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, fail
 from . import join, exact, token, satisfies, singleton, EOF, parser, join_list
+from . import set_debug
 
 control_nonblock_statements = [['go', 'to'], ['call'], ['return'], ['continue'], 
         ['stop'], ['pause']]
@@ -46,20 +47,30 @@ class OuterBlock(object):
         self.content = content
         self.statement = statement
 
-        try:
-            self.begin, self.inner_block, self.end = content
-        except:
-            self.inner_block, self.end = content
+#        try:
+#            self.begin, self.inner_block, self.end = content
+#        except:
+#            self.inner_block, self.end = content
 
     def __repr__(self):
+#        result = ""
+#        if hasattr(self, 'begin'):
+#            result += repr(self.begin)
+#        result += "\n>>\n"
+#        result += "\n".join(["||| " + line for line in repr(self.inner_block).split("\n")])
+#        result += "\n<<\n"
+#        result += repr(self.end)
+#        return result
+
         result = ""
-        if hasattr(self, 'begin'):
-            result += repr(self.begin)
-        result += "\n>>\n"
-        result += "\n".join(["||| " + line for line in repr(self.inner_block).split("\n")])
-        result += "\n<<\n"
-        result += repr(self.end)
+
+        for elem in self.content:
+            if isinstance(elem, InnerBlock):
+                result += "\n".join(["||| " + line for line in repr(elem).split("\n")]) + "\n"
+            else:
+                result += repr(elem) + "\n"
         return result
+            
 
     def __str__(self):
         return "".join([str(elem) for elem in self.content])
@@ -99,31 +110,38 @@ class InnerBlock(object):
             code = ll.code.lower()
             success = keyword("if").scan(code)
             rest = code[success.end:]
-            return rest.find("then") != 1
+            # this is a hack that I am currently happy with
+            return rest.find("then") != -1
 
         def old_style_if(ll):
             return not new_style_if(ll)
 
         @parser
-        def proper_if_block(text, start):
-            begin = (if_statement.guard(new_style_if, "new style if") // singleton) % "begin"
-            alternative = (non_block | do_block | if_block | 
+        def if_block(text, start):
+            begin = (if_statement.guard(new_style_if, "new style if") // singleton)
+            inner = (non_block | do_block | if_block | 
                 none_of_types([["end", "if"], ["else", "if"], ["else"]]))
             else_or_else_if = else_if_statement | else_statement
-            inner = (((alternative.many() + else_or_else_if.optional()) // join_list)
-                    .many() // inner_block // singleton)
-            inner = ((non_block | do_block | if_block | none_of_types([["end", "if"]]))
-                           .many() // inner_block // singleton) % "inner"
-            end = (end_if_statement // singleton) % "end"
 
-            result = ((begin + inner + end) // outer_block("if_block")).scan(text, start)
+            def inner_block_or_empty(ls):
+                if ls != []:
+                    return [inner_block(ls)]
+                else:
+                    return []
+
+            section = ((inner.many() // inner_block_or_empty) 
+                    + else_or_else_if.optional()).guard(lambda l: l != [], "anything")
+            sections = section.many() // join_list
+
+            end = (end_if_statement // singleton)
+
+            result = ((begin + sections + end) // outer_block("if_block")).scan(text, start)
 
             return result
 
-        @parser
-        def if_block(text, start):
-            return (proper_if_block | if_statement.guard(old_style_if, "old style if")).scan(text, start)
-
+        #@parser
+        #def if_block(text, start):
+        #    return (proper_if_block | if_statement.guard(old_style_if, "old style if")).scan(text, start)
 
         def new_style_do(ll):
             return not matches(keyword("do") + token(label), ll.code.lower())
@@ -132,7 +150,7 @@ class InnerBlock(object):
             return not new_style_do(ll)
 
         @parser
-        def proper_do_block(text, start):
+        def do_block(text, start):
             begin = do_statement.guard(new_style_do, "new style do") // singleton
 
             inner = ((non_block | do_block | if_block | none_of_types([["end", "do"]]))
@@ -141,9 +159,9 @@ class InnerBlock(object):
 
             return ((begin + inner + end) // outer_block("do_block")).scan(text, start)
 
-        @parser
-        def do_block(text, start):
-            return (proper_do_block | do_statement).scan(text, start)
+        #@parser
+        #def do_block(text, start):
+        #    return (proper_do_block | do_statement).scan(text, start)
        
         block_or_line = non_block | do_block | if_block | satisfies(lambda l: True, "")
 
