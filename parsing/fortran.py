@@ -1,48 +1,39 @@
-from argparse import ArgumentParser
-import pprint
-import sys
-
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, fail
-from . import join, exact, token, satisfies, singleton, EOF, parser
+from . import join, exact, token, satisfies, singleton, EOF, parser, join_list
 
 control_nonblock_statements = [['go', 'to'], ['call'], ['return'], ['continue'], 
         ['stop'], ['pause']]
 
-control_block_statements = [['if'], ['else', 'if'], ['else'],
-               ['end', 'if'], ['do'],
-               ['end', 'do']]
+control_block_statements = [['if'], ['else', 'if'], ['else'], ['end', 'if'], 
+        ['do'], ['end', 'do']]
 
 control_statements = control_block_statements + control_nonblock_statements
 
-io_statements =  [['read'], ['write'], ['print'], ['rewind'],
-               ['backspace'], ['endfile'], ['open'], ['close'], ['inquire']]
+io_statements = [['read'], ['write'], ['print'], ['rewind'], ['backspace'], 
+        ['endfile'], ['open'], ['close'], ['inquire']]
 
 assign_statements = [['assign']]
 
-executable_statements = (control_statements + 
-        assign_statements + io_statements)
+executable_statements = control_statements + assign_statements + io_statements
 
-type_statements = [['integer'], ['real'], 
-               ['double', 'precision'], ['complex'], ['logical'], ['character']]
+type_statements = [['integer'], ['real'], ['double', 'precision'], ['complex'], 
+        ['logical'], ['character']]
 
 specification_statements = type_statements + [['dimension'], ['common'], 
-               ['equivalence'], ['implicit'], ['parameter'], ['external'], 
-               ['intrinsic'], ['save']]
+        ['equivalence'], ['implicit'], ['parameter'], ['external'], ['intrinsic'], 
+        ['save']]
 
-
-top_level_statements = [['program'], ['end', 'program'],
-               ['function'], ['end', 'function'], ['subroutine'],
-               ['end', 'subroutine'], ['block', 'data'],
-               ['end', 'block', 'data'], ['end']]
+top_level_statements = [['program'], ['end', 'program'], ['function'], 
+        ['end', 'function'], ['subroutine'], ['end', 'subroutine'], 
+        ['block', 'data'], ['end', 'block', 'data'], ['end']]
 
 misc_nonexec_statements = [['entry'], ['data'], ['format']]
 
 non_executable_statements = (specification_statements 
         + misc_nonexec_statements + top_level_statements)
                 
-
-# order is important here
+# order is important here, because 'end' should come before 'end if' et cetera
 statements = executable_statements + non_executable_statements
 
 def outer_block(statement):
@@ -55,28 +46,31 @@ class OuterBlock(object):
         self.content = content
         self.statement = statement
 
-        assert len(content) == 3
-        self.begin, self.inner_block, self.end = content
+        try:
+            self.begin, self.inner_block, self.end = content
+        except:
+            self.inner_block, self.end = content
 
     def __repr__(self):
         result = ""
-        result += repr(self.begin)
-        result += ">>"
-        result += repr(self.inner_block)
-        result += "<<"
+        if hasattr(self, 'begin'):
+            result += repr(self.begin)
+        result += "\n>>\n"
+        result += "\n".join(["||| " + line for line in repr(self.inner_block).split("\n")])
+        result += "\n<<\n"
         result += repr(self.end)
         return result
 
-
     def __str__(self):
-        return str(self.begin) + str(self.inner_block) + str(self.end)
+        return "".join([str(elem) for elem in self.content])
+
 
 def inner_block(content):
     return InnerBlock(content)
 
 class InnerBlock(object):
     def __init__(self, content):
-        # this is a list of LogicalLines
+        # this is a list of `LogicalLine`s
         self.content = content
 
         non_block_statements = (io_statements + assign_statements
@@ -93,59 +87,74 @@ class InnerBlock(object):
         else_statement = one_of_types([["else"]])
         end_if_statement = one_of_types([["end", "if"]])
 
-        if_block = fail("if")
+        def debug(text, start, msg):
+            import sys
+            if start >= len(text):
+                print msg + " at EOF"
+            else:
+                print msg + " at line", start + 1, str(text[start]).rstrip()
+            sys.stdout.flush()
+
+        def new_style_if(ll):
+            code = ll.code.lower()
+            success = keyword("if").scan(code)
+            rest = code[success.end:]
+            return rest.find("then") != 1
+
+        def old_style_if(ll):
+            return not new_style_if(ll)
+
+        @parser
+        def proper_if_block(text, start):
+            begin = (if_statement.guard(new_style_if, "new style if") // singleton) % "begin"
+            alternative = (non_block | do_block | if_block | 
+                none_of_types([["end", "if"], ["else", "if"], ["else"]]))
+            else_or_else_if = else_if_statement | else_statement
+            inner = (((alternative.many() + else_or_else_if.optional()) // join_list)
+                    .many() // inner_block // singleton)
+            inner = ((non_block | do_block | if_block | none_of_types([["end", "if"]]))
+                           .many() // inner_block // singleton) % "inner"
+            end = (end_if_statement // singleton) % "end"
+
+            result = ((begin + inner + end) // outer_block("if_block")).scan(text, start)
+
+            return result
+
+        @parser
+        def if_block(text, start):
+            return (proper_if_block | if_statement.guard(old_style_if, "old style if")).scan(text, start)
+
+
+        def new_style_do(ll):
+            return not matches(keyword("do") + token(label), ll.code.lower())
+
+        def old_style_do(ll):
+            return not new_style_do(ll)
 
         @parser
         def proper_do_block(text, start):
-            #if start >= len(text):
-            #    print "proper do block at EOF"
-            #else:
-            #    print "proper do block at line", start + 1, text[start]
-            #sys.stdout.flush()
+            begin = do_statement.guard(new_style_do, "new style do") // singleton
 
-            success = (((do_statement // singleton)
-                + ((non_block | do_block | if_block | none_of_types([["end", "do"]])).many() // inner_block // singleton)
-                + (end_do_statement // singleton)) // outer_block("do_block")).scan(text, start)
+            inner = ((non_block | do_block | if_block | none_of_types([["end", "do"]]))
+                           .many() // inner_block // singleton)
+            end = end_do_statement // singleton
 
-            #if success.end >= len(text):
-            #    print "exiting proper do block at EOF"
-            #else:
-            #    print "exiting proper do block at line", success.end + 1, text[success.end]
-            #sys.stdout.flush()
-            return success
- 
+            return ((begin + inner + end) // outer_block("do_block")).scan(text, start)
+
         @parser
         def do_block(text, start):
-            #if start >= len(text):
-            #    print "do block at EOF"
-            #else:
-            #    print "do block at line", start + 1, text[start]
-            #sys.stdout.flush()
-
-            success = (proper_do_block | do_statement).scan(text, start)
-            #if success.end >= len(text):
-            #    print "exisiting do block at EOF"
-            #else:
-            #    print "exiting  do block at line", success.end + 1, text[success.end]
-            #sys.stdout.flush()
-            return success
+            return (proper_do_block | do_statement).scan(text, start)
        
         block_or_line = non_block | do_block | if_block | satisfies(lambda l: True, "")
 
         # this is a list of LogicalLines or OuterBlocks
-        for l in content:
-            assert isinstance(l, LogicalLine) or isinstance(l, OuterBlock), "got {}".format(type(l))
         self.blocks = block_or_line.many().parse(content)
 
     def __repr__(self):
-        return "\n".join(["   " + str(elem).strip() for elem in self.blocks])
+        return "\n".join([repr(elem) for elem in self.blocks])
 
-special = one_of(" =+-*/().,$'\":")
-name = letter + ~alphanumeric // join
-label = digit.between(1, 5) // join
-
-def keyword(string):
-    return token(exact(string))
+    def __str__(self):
+        return "".join([str(elem) for elem in self.content])
 
 
 class Line(object):
@@ -184,7 +193,7 @@ class Line(object):
                 parser = parser + parsers[i]
 
             try:
-                self.statement = (parser >> msg).parse(self.code)
+                self.statement = (parser >> msg).parse(self.code.lower())
                 raise StopIteration()
             except Failure:
                 pass
@@ -232,14 +241,12 @@ class LogicalLine(object):
         result = ''
 
         if hasattr(self, 'label'):
-            result += "{} statement with label {}: ".format(self.statement, self.label)
+            result += "{}[{}]: ".format(self.statement, self.label)
         else:
-            result += "{} statement: ".format(self.statement)
+            result += "{}: ".format(self.statement)
 
-        # result += "".join([l.original for l in self.lines]) + "---\n"
-        result += self.code.rstrip()
+        result += self.code.strip()
 
-        # return result + "-------"
         return result
 
     def __str__(self):
@@ -256,7 +263,7 @@ def parse_into_logical_lines(lines):
     logical_line = (comment.many() + initial // singleton 
                 + (comment | continuation).many()) // LogicalLine
 
-    return (~logical_line).parse(lines)
+    return logical_line.many().parse(lines)
         
 
 def parse_source(logical_lines):
@@ -307,7 +314,17 @@ def none_of_types(names):
                 one_of_list(names))
 
 # empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
-# remove_blanks = ~(+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, ""))
+# remove_blanks = (+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, "")).many()
+
+special = one_of(" =+-*/().,$'\":")
+name = letter + ~alphanumeric // join
+label = digit.between(1, 5) // join
+
+def keyword(string):
+    return token(exact(string))
+
+
+from argparse import ArgumentParser
 
 def _argument_parser_():
     parser = ArgumentParser()
@@ -322,14 +339,16 @@ def parse_file(filename):
     return parse_source(parse_into_logical_lines(read_file(filename)))
 
 if __name__ == '__main__':
-    sys.setrecursionlimit(150)
     args = _argument_parser_().parse_args()
 
     raw_lines = read_file(args.filename)
     logical_lines = parse_into_logical_lines(read_file(args.filename))
 
     parsed = parse_source(logical_lines)
-    #pprint.pprint(parsed, indent=4)
+
+    print "  ================> original <=================== "
+    print "".join([str(prog) for prog in parsed])
+    print "  ==============> end original <================= "
 
     for elem in parsed:
         print "======>", elem.statement

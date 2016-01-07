@@ -1,4 +1,3 @@
-
 def location(text, index):
     if isinstance(text, str):
         line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
@@ -53,7 +52,8 @@ class parser(object):
 
     def scan(self, text, start=0):
         '''apply the parser to `text` at position `start`'''
-        return self.me(text, start)
+        result = self.me(text, start)
+        return result
 
     def parse(self, text, start=0):
         '''apply the parser and return the success value'''
@@ -316,14 +316,14 @@ def none_of(ls):
     return satisfies(lambda c: c not in ls, "none of {}".format(ls))
 
 
-#def join_list(ls):
-#    '''join for a list'''
-#    result = []
-#
-#    for e in ls:
-#        result += e
-#
-#    return result
+def join_list(ls):
+    '''join for a list'''
+    result = []
+
+    for e in ls:
+        result += e
+
+    return result
 
 def join(ls):
     return "".join(ls)
