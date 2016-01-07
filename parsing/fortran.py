@@ -1,21 +1,27 @@
 from argparse import ArgumentParser
+import pprint
+import sys
 
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
-from . import Failure, succeed, matches
-from . import join, exact, token, satisfies, singleton, EOF
+from . import Failure, succeed, matches, fail
+from . import join, exact, token, satisfies, singleton, EOF, parser
 
+control_nonblock_statements = [['go', 'to'], ['call'], ['return'], ['continue'], 
+        ['stop'], ['pause']]
 
-control_statements = [['go', 'to'], ['if'], ['else', 'if'], ['else'],
-               ['end', 'if'], ['continue'], ['stop'], ['pause'], ['do'],
-               ['end', 'do'],
-               ['call'], ['return'], ['end']]
+control_block_statements = [['if'], ['else', 'if'], ['else'],
+               ['end', 'if'], ['do'],
+               ['end', 'do']]
 
-io_statements =  [['read'], ['write'], 
-        ['print'], ['rewind'],
+control_statements = control_block_statements + control_nonblock_statements
+
+io_statements =  [['read'], ['write'], ['print'], ['rewind'],
                ['backspace'], ['endfile'], ['open'], ['close'], ['inquire']]
 
-executable_statements = control_statements + [['assign']] + io_statements
+assign_statements = [['assign']]
 
+executable_statements = (control_statements + 
+        assign_statements + io_statements)
 
 type_statements = [['integer'], ['real'], 
                ['double', 'precision'], ['complex'], ['logical'], ['character']]
@@ -24,14 +30,115 @@ specification_statements = type_statements + [['dimension'], ['common'],
                ['equivalence'], ['implicit'], ['parameter'], ['external'], 
                ['intrinsic'], ['save']]
 
-non_executable_statements = specification_statements + [['program'], ['end', 'program'],
+
+top_level_statements = [['program'], ['end', 'program'],
                ['function'], ['end', 'function'], ['subroutine'],
                ['end', 'subroutine'], ['block', 'data'],
-               ['end', 'block', 'data'],   
-               ['entry'], ['data'], ['format']] 
+               ['end', 'block', 'data'], ['end']]
+
+misc_nonexec_statements = [['entry'], ['data'], ['format']]
+
+non_executable_statements = (specification_statements 
+        + misc_nonexec_statements + top_level_statements)
+                
 
 # order is important here
-statements = non_executable_statements + executable_statements
+statements = executable_statements + non_executable_statements
+
+def outer_block(statement):
+    def inner(content):
+        return OuterBlock(content, statement)
+    return inner
+
+class OuterBlock(object):
+    def __init__(self, content, statement):
+        self.content = content
+        self.statement = statement
+
+        assert len(content) == 3
+        self.begin, self.inner_block, self.end = content
+
+    def __repr__(self):
+        result = ""
+        result += repr(self.begin)
+        result += ">>"
+        result += repr(self.inner_block)
+        result += "<<"
+        result += repr(self.end)
+        return result
+
+
+    def __str__(self):
+        return str(self.begin) + str(self.inner_block) + str(self.end)
+
+def inner_block(content):
+    return InnerBlock(content)
+
+class InnerBlock(object):
+    def __init__(self, content):
+        # this is a list of LogicalLines
+        self.content = content
+
+        non_block_statements = (io_statements + assign_statements
+                + specification_statements + misc_nonexec_statements
+                + control_nonblock_statements)
+
+        non_block = one_of_types(non_block_statements)
+        
+        do_statement = one_of_types([["do"]])
+        end_do_statement = one_of_types([["end", "do"]])
+
+        if_statement = one_of_types([["if"]])
+        else_if_statement = one_of_types([["else", "if"]])
+        else_statement = one_of_types([["else"]])
+        end_if_statement = one_of_types([["end", "if"]])
+
+        if_block = fail("if")
+
+        @parser
+        def proper_do_block(text, start):
+            #if start >= len(text):
+            #    print "proper do block at EOF"
+            #else:
+            #    print "proper do block at line", start + 1, text[start]
+            #sys.stdout.flush()
+
+            success = (((do_statement // singleton)
+                + ((non_block | do_block | if_block | none_of_types([["end", "do"]])).many() // inner_block // singleton)
+                + (end_do_statement // singleton)) // outer_block("do_block")).scan(text, start)
+
+            #if success.end >= len(text):
+            #    print "exiting proper do block at EOF"
+            #else:
+            #    print "exiting proper do block at line", success.end + 1, text[success.end]
+            #sys.stdout.flush()
+            return success
+ 
+        @parser
+        def do_block(text, start):
+            #if start >= len(text):
+            #    print "do block at EOF"
+            #else:
+            #    print "do block at line", start + 1, text[start]
+            #sys.stdout.flush()
+
+            success = (proper_do_block | do_statement).scan(text, start)
+            #if success.end >= len(text):
+            #    print "exisiting do block at EOF"
+            #else:
+            #    print "exiting  do block at line", success.end + 1, text[success.end]
+            #sys.stdout.flush()
+            return success
+       
+        block_or_line = non_block | do_block | if_block | satisfies(lambda l: True, "")
+
+        # this is a list of LogicalLines or OuterBlocks
+        for l in content:
+            assert isinstance(l, LogicalLine) or isinstance(l, OuterBlock), "got {}".format(type(l))
+        self.blocks = block_or_line.many().parse(content)
+
+    def __repr__(self):
+        return "\n".join(["   " + str(elem).strip() for elem in self.blocks])
 
 special = one_of(" =+-*/().,$'\":")
 name = letter + ~alphanumeric // join
@@ -40,14 +147,6 @@ label = digit.between(1, 5) // join
 def keyword(string):
     return token(exact(string))
 
-def one_of_list(names):
-    if len(names) == 0:
-        return "nothing"
-    if len(names) == 1:
-        return names[0]
-    if len(names) == 2:
-        return names[0] + " or " + names[1]
-    return "one of " + ", ".join(names[:-1]) + " or " + names[-1]
 
 class Line(object):
     def __init__(self, line):
@@ -72,7 +171,7 @@ class Line(object):
 
         statement_label = lowered[:cont]
         if len(statement_label.strip()) > 0:
-            self.label = (token(label) // int).value(statement_label)
+            self.label = (token(label) // int).parse(statement_label)
 
         self.code = line[margin:]
 
@@ -85,7 +184,7 @@ class Line(object):
                 parser = parser + parsers[i]
 
             try:
-                self.statement = (parser >> msg).value(self.code)
+                self.statement = (parser >> msg).parse(self.code)
                 raise StopIteration()
             except Failure:
                 pass
@@ -133,14 +232,15 @@ class LogicalLine(object):
         result = ''
 
         if hasattr(self, 'label'):
-            result += "{} statement with label {}:\n-\n".format(self.statement, self.label)
+            result += "{} statement with label {}: ".format(self.statement, self.label)
         else:
-            result += "{} statement:\n-\n".format(self.statement)
+            result += "{} statement: ".format(self.statement)
 
-        result += "".join([l.original for l in self.lines]) + "---\n"
-        result += self.code
+        # result += "".join([l.original for l in self.lines]) + "---\n"
+        result += self.code.rstrip()
 
-        return result + "-------"
+        # return result + "-------"
+        return result
 
     def __str__(self):
         return "".join([str(l) for l in self.lines])
@@ -153,47 +253,58 @@ def parse_into_logical_lines(lines):
     comment, continuation, initial = (of_type(t) 
             for t in ['comment', 'continuation', 'initial'])
 
-    logical_line = (~comment + initial // singleton 
-                + ~(comment | continuation) 
-                + ~comment) // LogicalLine
+    logical_line = (comment.many() + initial // singleton 
+                + (comment | continuation).many()) // LogicalLine
 
-    return (~logical_line).value(lines)
-
+    return (~logical_line).parse(lines)
+        
 
 def parse_source(logical_lines):
-    def one_of(names):
-        return satisfies(lambda l: l.statement in names, 
-                one_of_list(names))
+    function = ((one_of_types([["function"]]) // singleton
+                + none_of_types(top_level_statements).many() // inner_block // singleton
+                + one_of_types([["end"], ["end", "function"]]) // singleton)
+                    // outer_block("function_block"))
 
-    def none_of(names):
-        return satisfies(lambda l: l.statement not in names, 
-                one_of_list(names))
+    subroutine = ((one_of_types([["subroutine"]]) // singleton
+                + none_of_types(top_level_statements).many() // inner_block // singleton
+                + one_of_types([["end"], ["end", "subroutine"]]) // singleton)
+                    // outer_block("subroutine_block"))
 
-    function = ((one_of(["function"]) // singleton 
-                + ~(none_of(["end", "end function"]))
-                + one_of(["end", "end function"]) // singleton) 
-                    // (lambda x: {"function": x}))
-
-    subroutine = ((one_of(["subroutine"]) // singleton
-                + ~(none_of(["end", "end subroutine"]))
-                + one_of(["end", "end subroutine"]) // singleton)
-                    // (lambda x: {"subroutine": x}))
-
-    block_data = ((one_of(["block data"]) // singleton 
-                + ~(none_of(["end", "end block data"]))
-                + one_of(["end", "end block data"]) // singleton)
-                    // (lambda x: {"block data": x}))
+    block_data = ((one_of_types([["block", "data"]]) // singleton
+                + none_of_types(top_level_statements).many() // inner_block // singleton
+                + one_of_types([["end"], ["end", "block", "data"]]) // singleton)
+                    // outer_block("block_data_block"))
 
     subprogram = function | subroutine | block_data
 
-    main_program = ((-one_of(["program"])
-            + ~(none_of(["end", "end program"]))
-            + one_of(["end", "end program"]) // singleton)
-                    // (lambda x: {"program": x}))
+    main_program = ((one_of_types([["program"]]).optional() 
+                + none_of_types(top_level_statements).many() // inner_block // singleton
+                + one_of_types([["end"], ["end", "program"]]) // singleton)
+                    // outer_block("program_block"))
 
     program_unit = subprogram | main_program
 
-    return (~program_unit).value(logical_lines)
+    return (+program_unit).parse(logical_lines)
+
+
+def one_of_list(names):
+    if len(names) == 0:
+        return "nothing"
+    if len(names) == 1:
+        return " ".join(names[0])
+    if len(names) == 2:
+        return " ".join(names[0]) + " or " + " ".join(names[1])
+
+    proper_names = [" ".join(name) for name in names]
+    return "one of " + ", ".join(proper_names) + " or " + " ".join(names[-1])
+
+def one_of_types(names):
+    return satisfies(lambda l: l.statement in [" ".join(name) for name in names], 
+                one_of_list(names))
+
+def none_of_types(names):
+    return satisfies(lambda l: l.statement not in [" ".join(name) for name in names], 
+                one_of_list(names))
 
 # empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
 # remove_blanks = ~(+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, ""))
@@ -207,22 +318,19 @@ def read_file(filename):
     with open(filename) as fl:
         return [Line(line) for line in fl]
 
+def parse_file(filename):
+    return parse_source(parse_into_logical_lines(read_file(filename)))
+
 if __name__ == '__main__':
+    sys.setrecursionlimit(150)
     args = _argument_parser_().parse_args()
 
     raw_lines = read_file(args.filename)
     logical_lines = parse_into_logical_lines(read_file(args.filename))
 
     parsed = parse_source(logical_lines)
-    for l in parsed:
-        for key, value in l.iteritems():
-            print ">", key, "<"
+    #pprint.pprint(parsed, indent=4)
 
-            for ll in value:
-                print str(ll),
-            
-        print
-        print
-
-
-    
+    for elem in parsed:
+        print "======>", elem.statement
+        print repr(elem)

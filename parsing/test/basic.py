@@ -7,7 +7,7 @@ class TestBasic(unittest.TestCase):
         pass
 
     def match(self, test, text, value, end=None):
-        success = test.parse(text)
+        success = test.scan(text)
 
         self.assertEqual(success.value, value)
         if end is not None:
@@ -15,7 +15,7 @@ class TestBasic(unittest.TestCase):
 
     def fail(self, test, text, expected, start=None):
         with self.assertRaises(Failure) as failure:
-            test.parse(text)
+            test.scan(text)
 
         self.assertEqual(failure.exception.expected, expected)
         if start is not None:
@@ -127,7 +127,7 @@ class TestBasic(unittest.TestCase):
         text = "email me at someone@example.com"
 
         test = exact("email me at") >> spaces >> regex(r"(\w+)@(\w+)\.(\w+)")
-        match = test.parse(text)
+        match = test.scan(text)
         self.assertEqual(match.value.groups(0), ("someone", "example", "com"))
 
 

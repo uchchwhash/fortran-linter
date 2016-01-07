@@ -51,13 +51,13 @@ class parser(object):
         self.me = me
         self.desc = None
 
-    def parse(self, text, start=0):
+    def scan(self, text, start=0):
         '''apply the parser to `text` at position `start`'''
         return self.me(text, start)
 
-    def value(self, text, start=0):
+    def parse(self, text, start=0):
         '''apply the parser and return the success value'''
-        return self.parse(text, start).value
+        return self.scan(text, start).value
 
     def bind(self, function):
         '''the `function`, given a `Success` object, should return a parser
@@ -65,9 +65,9 @@ class parser(object):
         (shortcut: >=)'''
         @parser
         def inner(text, start):
-            success_self = self.parse(text, start)
+            success_self = self.scan(text, start)
             then = function(success_self)
-            success_then = then.parse(text, success_self.end)
+            success_then = then.scan(text, success_self.end)
             return Success(text, start, success_then.end, success_then.value)
         return inner
 
@@ -80,8 +80,8 @@ class parser(object):
         (shortcut: >>)'''
         #@parser
         #def inner(text, start):
-        #    success = self.parse(text, start)
-        #    return other.parse(text, success.start)
+        #    success = self.scan(text, start)
+        #    return other.scan(text, success.start)
         #return inner
         return self >= (lambda _: other)
 
@@ -94,8 +94,8 @@ class parser(object):
         (shortcut: <<)'''
         @parser
         def inner(text, start):
-            success_self = self.parse(text, start)
-            success_other = other.parse(text, success_self.end)
+            success_self = self.scan(text, start)
+            success_other = other.scan(text, success_self.end)
             return Success(text, start, success_other.end, success_self.value)
         return inner
 
@@ -109,12 +109,12 @@ class parser(object):
         @parser
         def inner(text, start):
             try:
-                return self.parse(text, start)
+                return self.scan(text, start)
             except Failure as failure:
                 if failure.start != start:
                     raise failure
                 else:
-                    return other.parse(text, start)
+                    return other.scan(text, start)
         return inner
 
     def __xor__(self, other):
@@ -126,9 +126,9 @@ class parser(object):
         @parser
         def inner(text, start):
             try:
-                return self.parse(text, start)
+                return self.scan(text, start)
             except Failure:
-                return other.parse(text, start)
+                return other.scan(text, start)
         return inner
 
     def __or__(self, other):
@@ -140,8 +140,8 @@ class parser(object):
         (shortcut: +)'''
         @parser
         def inner(text, start):
-            success_self = self.parse(text, start)
-            success_other = other.parse(text, success_self.end)
+            success_self = self.scan(text, start)
+            success_other = other.scan(text, success_self.end)
             return Success(text, start, success_other.end, 
                     success_self.value + success_other.value)
         return inner
@@ -166,7 +166,7 @@ class parser(object):
         #            Success(text, index, function(success.value))))
         @parser
         def inner(text, start):
-            success = self.parse(text, start)
+            success = self.scan(text, start)
             return Success(text, success.start, success.end, function(success.value))
         return inner
 
@@ -177,7 +177,7 @@ class parser(object):
     def guard(self, predicate, desc):
         @parser
         def inner(text, start):
-            success = self.parse(text, start)
+            success = self.scan(text, start)
             if predicate(success.value):
                 return success
             else:
@@ -196,7 +196,7 @@ class parser(object):
 
             while count < m:
                 try:
-                    success = self.parse(text, current)
+                    success = self.scan(text, current)
                     result += [success.value]
                     current = success.end
                     count = count + 1
@@ -352,8 +352,8 @@ def separated_by(me, sep, empty=None):
     'list of `me` parsers separated by `sep` parsers'''
     @parser
     def inner(text, start):
-        head = me.parse(text, start)
-        tail = (~(sep >> me)).parse(text, head.end)
+        head = me.scan(text, start)
+        tail = (~(sep >> me)).scan(text, head.end)
         return Success(text, start, tail.end, [head.value] + tail.value)
     
     if empty is None:
@@ -368,7 +368,7 @@ def token(me):
 
 def matches(me, text, start=0):
     try:
-        _ = me.parse(text, start)
+        _ = me.scan(text, start)
         return True
     except Failure:
         return False

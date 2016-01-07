@@ -2,3 +2,4 @@
 *.pdf
 *.pyc
 parsing/old.py
+samples/*
