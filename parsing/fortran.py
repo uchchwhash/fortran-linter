@@ -51,8 +51,8 @@ class OuterBlock(object):
 
         for elem in self.content:
             if isinstance(elem, InnerBlock):
-                result += "\n".join(["||| " + line for line in repr(elem).split("\n") if line != '']) + "\n"
-                #result += repr(elem)
+                lines = repr(elem).split("\n")
+                result += "\n".join(["||| " + line for line in lines if line != '']) + "\n"
             else:
                 result += repr(elem)
 
@@ -162,6 +162,7 @@ class Line(object):
             self.type = "continuation"
             assert len(lowered[:cont].strip()) == 0
             self.code = line[margin:]
+            self.cont = line[cont:margin]
             return 
 
         self.type = "initial"
@@ -301,8 +302,62 @@ def none_of_types(names):
     return satisfies(lambda l: l.statement not in [" ".join(name) for name in names], 
                 one_of_list(names))
 
-# empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
-# remove_blanks = (+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, "")).many()
+def remove_blanks(raw_lines):
+    empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
+    remove = (+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, "")).many()
+    return str((remove // outer_block("source")).parse(raw_lines))
+
+
+def indent(doc, indent_width=3):
+    def indent_outer(outer, spaces):
+        result = ""
+        for elem in outer.content:
+            if isinstance(elem, InnerBlock):
+                result += indent_inner(elem, spaces + (" " * indent_width))
+            elif isinstance(elem, LogicalLine):
+                result += indent_logical(elem, spaces)
+            elif isinstance(elem, OuterBlock):
+                result += indent_outer(elem, spaces)
+            else:
+                raise ValueError("unknown type: {}".format(type(elem)))
+        return result
+
+    def indent_inner(inner, spaces):
+        result = ""
+        for elem in inner.blocks:
+            if isinstance(elem, InnerBlock):
+                raise ValueError("inner blocks should not be nested: {}"
+                        .format(str(inner)))
+            elif isinstance(elem, OuterBlock):
+                result += indent_outer(elem, spaces)
+            elif isinstance(elem, LogicalLine):
+                result += indent_logical(elem, spaces)
+            else:
+                raise ValueError("unknown type: {}".format(type(elem)))
+        return result
+
+    def indent_logical(elem, spaces):
+        cont = 5
+        margin = cont + 1
+        result = ""
+        for line in elem.lines:
+            if line.type == "comment":
+                result += line.original
+            elif line.type == "continuation":
+                result += (" " * cont) + line.cont + spaces + line.code.lstrip()
+            elif line.type == "initial":
+                after_label = " " + spaces + line.code.lstrip() 
+                if hasattr(line, 'label'):
+                    result += "{:5s}".format(str(line.label)) + after_label
+                else:
+                    result += "{:5s}".format("") + after_label
+            else:
+                raise ValueError("unknown type: {}".format(line.type))
+        return result
+
+
+    return indent_outer(doc, " ")
+
 
 special = one_of(" =+-*/().,$'\":")
 name = letter + ~alphanumeric // join
@@ -313,9 +368,13 @@ def keyword(string):
 
 
 from argparse import ArgumentParser
-
+from argcomplete import autocomplete, warn
 def _argument_parser_():
     parser = ArgumentParser()
+    task_list = ['remove-blanks', 'print-details', 'indent', 'new-comments']
+    parser.add_argument("task", choices=task_list,
+            metavar="task",
+            help="in {}".format(task_list))
     parser.add_argument("filename")
     return parser
 
@@ -327,15 +386,23 @@ def parse_file(filename):
     return parse_source(parse_into_logical_lines(read_file(filename)))
 
 if __name__ == '__main__':
-    args = _argument_parser_().parse_args()
+    arg_parser = _argument_parser_()
+    autocomplete(arg_parser)
+    args = arg_parser.parse_args()
 
     raw_lines = read_file(args.filename)
     logical_lines = parse_into_logical_lines(read_file(args.filename))
-
     parsed = parse_source(logical_lines)
 
-    print "  ================> original <=================== "
-    print str(parsed)
-    print "  ==============> end original <================= "
-    print
-    print repr(parsed)
+    if args.task == 'remove-blanks':
+        print remove_blanks(raw_lines)
+    elif args.task == 'indent':
+        print indent(parsed)
+    elif args.task == 'print-details':
+        print repr(parsed)
+    elif args.task == 'new-comments':
+        # TODO
+        pass
+    else:
+        raise ValueError("invalid choice: {}".format(args.task))
+
