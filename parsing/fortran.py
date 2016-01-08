@@ -1,7 +1,6 @@
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, fail
 from . import join, exact, token, satisfies, singleton, EOF, parser, join_list
-from . import set_debug
 
 control_nonblock_statements = [['go', 'to'], ['call'], ['return'], ['continue'], 
         ['stop'], ['pause']]
@@ -47,30 +46,17 @@ class OuterBlock(object):
         self.content = content
         self.statement = statement
 
-#        try:
-#            self.begin, self.inner_block, self.end = content
-#        except:
-#            self.inner_block, self.end = content
-
     def __repr__(self):
-#        result = ""
-#        if hasattr(self, 'begin'):
-#            result += repr(self.begin)
-#        result += "\n>>\n"
-#        result += "\n".join(["||| " + line for line in repr(self.inner_block).split("\n")])
-#        result += "\n<<\n"
-#        result += repr(self.end)
-#        return result
-
         result = ""
 
         for elem in self.content:
             if isinstance(elem, InnerBlock):
-                result += "\n".join(["||| " + line for line in repr(elem).split("\n")]) + "\n"
+                result += "\n".join(["||| " + line for line in repr(elem).split("\n") if line != '']) + "\n"
+                #result += repr(elem)
             else:
-                result += repr(elem) + "\n"
+                result += repr(elem)
+
         return result
-            
 
     def __str__(self):
         return "".join([str(elem) for elem in self.content])
@@ -97,14 +83,6 @@ class InnerBlock(object):
         else_if_statement = one_of_types([["else", "if"]])
         else_statement = one_of_types([["else"]])
         end_if_statement = one_of_types([["end", "if"]])
-
-        def debug(text, start, msg):
-            import sys
-            if start >= len(text):
-                print msg + " at EOF"
-            else:
-                print msg + " at line", start + 1, str(text[start]).rstrip()
-            sys.stdout.flush()
 
         def new_style_if(ll):
             code = ll.code.lower()
@@ -139,10 +117,6 @@ class InnerBlock(object):
 
             return result
 
-        #@parser
-        #def if_block(text, start):
-        #    return (proper_if_block | if_statement.guard(old_style_if, "old style if")).scan(text, start)
-
         def new_style_do(ll):
             return not matches(keyword("do") + token(label), ll.code.lower())
 
@@ -159,17 +133,13 @@ class InnerBlock(object):
 
             return ((begin + inner + end) // outer_block("do_block")).scan(text, start)
 
-        #@parser
-        #def do_block(text, start):
-        #    return (proper_do_block | do_statement).scan(text, start)
-       
         block_or_line = non_block | do_block | if_block | satisfies(lambda l: True, "")
 
         # this is a list of LogicalLines or OuterBlocks
         self.blocks = block_or_line.many().parse(content)
 
     def __repr__(self):
-        return "\n".join([repr(elem) for elem in self.blocks])
+        return "".join([repr(elem) for elem in self.blocks])
 
     def __str__(self):
         return "".join([str(elem) for elem in self.content])
@@ -225,11 +195,11 @@ class Line(object):
         self.statement = 'assignment'
 
     def __repr__(self):
-        orig = self.original.rstrip()
+        orig = self.original.lstrip()
         if self.type == "comment":
             return "{:23s}: {}".format("comment", orig)
 
-        code = self.code.rstrip()
+        code = self.code.lstrip()
         if self.type == "continuation":
             return "{:23s}: {}".format("continuation", code)
 
@@ -263,7 +233,7 @@ class LogicalLine(object):
         else:
             result += "{}: ".format(self.statement)
 
-        result += self.code.strip()
+        result += self.code.lstrip()
 
         return result
 
@@ -309,7 +279,7 @@ def parse_source(logical_lines):
 
     program_unit = subprogram | main_program
 
-    return (+program_unit).parse(logical_lines)
+    return (+program_unit // outer_block("source_file")).parse(logical_lines)
 
 
 def one_of_list(names):
@@ -365,9 +335,7 @@ if __name__ == '__main__':
     parsed = parse_source(logical_lines)
 
     print "  ================> original <=================== "
-    print "".join([str(prog) for prog in parsed])
+    print str(parsed)
     print "  ==============> end original <================= "
-
-    for elem in parsed:
-        print "======>", elem.statement
-        print repr(elem)
+    print
+    print repr(parsed)
