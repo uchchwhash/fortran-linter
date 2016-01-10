@@ -36,6 +36,10 @@ non_executable_statements = (specification_statements
 # order is important here, because 'end' should come before 'end if' et cetera
 statements = executable_statements + non_executable_statements
 
+continuation_column = 5
+margin_column = continuation_column + 1
+
+
 def outer_block(statement):
     def inner(content):
         return OuterBlock(content, statement)
@@ -46,20 +50,14 @@ class OuterBlock(object):
         self.content = content
         self.statement = statement
 
+    def accept(self, visitor):
+        return visitor.outer_block(self)
+
     def __repr__(self):
-        result = ""
-
-        for elem in self.content:
-            if isinstance(elem, InnerBlock):
-                lines = repr(elem).split("\n")
-                result += "\n".join(["||| " + line for line in lines if line != '']) + "\n"
-            else:
-                result += repr(elem)
-
-        return result
+        return print_details(self)
 
     def __str__(self):
-        return "".join([str(elem) for elem in self.content])
+        return plain(self)
 
 
 def inner_block(content):
@@ -91,9 +89,6 @@ class InnerBlock(object):
             # this is a hack that I am currently happy with
             return rest.find("then") != -1
 
-        def old_style_if(ll):
-            return not new_style_if(ll)
-
         @parser
         def if_block(text, start):
             begin = (if_statement.guard(new_style_if, "new style if") // singleton)
@@ -120,9 +115,6 @@ class InnerBlock(object):
         def new_style_do(ll):
             return not matches(keyword("do") + token(label), ll.code.lower())
 
-        def old_style_do(ll):
-            return not new_style_do(ll)
-
         @parser
         def do_block(text, start):
             begin = do_statement.guard(new_style_do, "new style do") // singleton
@@ -138,40 +130,41 @@ class InnerBlock(object):
         # this is a list of LogicalLines or OuterBlocks
         self.blocks = block_or_line.many().parse(content)
 
+    def accept(self, visitor):
+        return visitor.inner_block(self)
+
     def __repr__(self):
-        return "".join([repr(elem) for elem in self.blocks])
+        return print_details(self)
 
     def __str__(self):
-        return "".join([str(elem) for elem in self.content])
+        return plain(self)
 
 
-class Line(object):
+class RawLine(object):
     def __init__(self, line):
         self.original = line
 
         lowered = line.rstrip().lower()
 
-        cont = 5
-        margin = cont + 1
-
         if matches(EOF | one_of("*c") | keyword("!"), lowered):
             self.type = "comment"
             return
 
-        if len(lowered) > cont and matches(none_of("0 "), lowered, cont):
-            self.type = "continuation"
-            assert len(lowered[:cont].strip()) == 0
-            self.code = line[margin:]
-            self.cont = line[cont:margin]
-            return 
+        if len(lowered) > continuation_column:
+            if matches(none_of("0 "), lowered, continuation_column):
+                self.type = "continuation"
+                assert len(lowered[:continuation_column].strip()) == 0
+                self.code = line[margin_column:]
+                self.cont = line[continuation_column:margin_column]
+                return 
 
         self.type = "initial"
 
-        statement_label = lowered[:cont]
+        statement_label = lowered[:continuation_column]
         if len(statement_label.strip()) > 0:
             self.label = (token(label) // int).parse(statement_label)
 
-        self.code = line[margin:]
+        self.code = line[margin_column:]
 
         def check(words):
             msg = succeed(" ".join(words))
@@ -195,21 +188,14 @@ class Line(object):
 
         self.statement = 'assignment'
 
+    def accept(self, visitor):
+        return visitor.raw_line(self)
+
     def __repr__(self):
-        orig = self.original.lstrip()
-        if self.type == "comment":
-            return "{:23s}: {}".format("comment", orig)
-
-        code = self.code.lstrip()
-        if self.type == "continuation":
-            return "{:23s}: {}".format("continuation", code)
-
-        if hasattr(self, 'label'):
-            return "{:15s}[{:>5d}] : {}".format(self.statement, self.label, code)
-        return "{:23s}: {}".format(self.statement, code)
+        return print_details(self)
 
     def __str__(self):
-        return self.original
+        return plain(self)
 
 
 class LogicalLine(object):
@@ -224,22 +210,16 @@ class LogicalLine(object):
         if hasattr(initial_line, 'label'):
             self.label = initial_line.label
 
-        self.code = "".join([l.code for l in lines if l.type != 'comment'])
+        self.code = "\n".join([l.code for l in lines if l.type != 'comment'])
+
+    def accept(self, visitor):
+        return visitor.logical_line(self)
 
     def __repr__(self):
-        result = ''
-
-        if hasattr(self, 'label'):
-            result += "{}[{}]: ".format(self.statement, self.label)
-        else:
-            result += "{}: ".format(self.statement)
-
-        result += self.code.lstrip()
-
-        return result
+        return print_details(self)
 
     def __str__(self):
-        return "".join([str(l) for l in self.lines])
+        return plain(self)
 
 
 def parse_into_logical_lines(lines):
@@ -256,27 +236,25 @@ def parse_into_logical_lines(lines):
         
 
 def parse_source(logical_lines):
-    function = ((one_of_types([["function"]]) // singleton
-                + none_of_types(top_level_statements).many() // inner_block // singleton
-                + one_of_types([["end"], ["end", "function"]]) // singleton)
-                    // outer_block("function_block"))
+    def top_level_block(kind, first_line_optional=False):
+        if first_line_optional:
+            first_line = one_of_types([kind]).optional()
+        else:
+            first_line = one_of_types([kind]) // singleton
 
-    subroutine = ((one_of_types([["subroutine"]]) // singleton
-                + none_of_types(top_level_statements).many() // inner_block // singleton
-                + one_of_types([["end"], ["end", "subroutine"]]) // singleton)
-                    // outer_block("subroutine_block"))
+        mid_lines = none_of_types(top_level_statements).many() // inner_block // singleton
+        last_line = one_of_types([["end"] + kind, ["end"]]) // singleton
 
-    block_data = ((one_of_types([["block", "data"]]) // singleton
-                + none_of_types(top_level_statements).many() // inner_block // singleton
-                + one_of_types([["end"], ["end", "block", "data"]]) // singleton)
-                    // outer_block("block_data_block"))
+        block_statement = "_".join(kind + ["block"])
+
+        return (first_line + mid_lines + last_line) // outer_block(block_statement)
+
+    function, subroutine, block_data = [top_level_block(kind) 
+            for kind in [["function"], ["subroutine"], ["block", "data"]]]
 
     subprogram = function | subroutine | block_data
 
-    main_program = ((one_of_types([["program"]]).optional() 
-                + none_of_types(top_level_statements).many() // inner_block // singleton
-                + one_of_types([["end"], ["end", "program"]]) // singleton)
-                    // outer_block("program_block"))
+    main_program = top_level_block(["program"], True)
 
     program_unit = subprogram | main_program
 
@@ -304,59 +282,117 @@ def none_of_types(names):
 
 def remove_blanks(raw_lines):
     empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
-    remove = (+empty // (lambda ls: Line("\n")) | satisfies(lambda l: True, "")).many()
+    remove = (+empty // (lambda ls: RawLine("\n")) | satisfies(lambda l: True, "")).many()
     return str((remove // outer_block("source")).parse(raw_lines))
 
 
+def new_comments(raw_lines):
+    def of_type(type_name):
+        return satisfies(lambda l: l.type == type_name, type_name)
+
+    def change_comment(line):
+        if matches(one_of("c*"), line.original):
+            return RawLine("!" + line.original[1:])
+        else:
+            return line
+
+    upgrade = of_type("comment") // change_comment | satisfies(lambda l: True, "")
+    return str((upgrade.many() // outer_block("source")).parse(raw_lines))
+
+
 def indent(doc, indent_width=3):
-    def indent_outer(outer, spaces):
-        result = ""
-        for elem in outer.content:
-            if isinstance(elem, InnerBlock):
-                result += indent_inner(elem, spaces + (" " * indent_width))
-            elif isinstance(elem, LogicalLine):
-                result += indent_logical(elem, spaces)
-            elif isinstance(elem, OuterBlock):
-                result += indent_outer(elem, spaces)
-            else:
-                raise ValueError("unknown type: {}".format(type(elem)))
-        return result
+    class Indent(object):
+        def __init__(self):
+            self.current = 1
 
-    def indent_inner(inner, spaces):
-        result = ""
-        for elem in inner.blocks:
-            if isinstance(elem, InnerBlock):
-                raise ValueError("inner blocks should not be nested: {}"
-                        .format(str(inner)))
-            elif isinstance(elem, OuterBlock):
-                result += indent_outer(elem, spaces)
-            elif isinstance(elem, LogicalLine):
-                result += indent_logical(elem, spaces)
+        def raw_line(self, line):
+            original = line.original
+            if line.type == 'comment':
+                return line.original
+            code = line.code
+            if line.type == 'continuation':
+                tab = " " * (self.current + indent_width)
             else:
-                raise ValueError("unknown type: {}".format(type(elem)))
-        return result
+                tab = " " * self.current
 
-    def indent_logical(elem, spaces):
-        cont = 5
-        margin = cont + 1
-        result = ""
-        for line in elem.lines:
+            return line.original[:margin_column] + tab + code.lstrip()
+
+        def logical_line(self, line):
+            return "".join([l.accept(self) for l in line.lines])
+
+        def inner_block(self, block):
+            self.current += indent_width
+            result = "".join([b.accept(self) for b in block.blocks])
+            self.current -= indent_width
+            return result
+
+        def outer_block(self, block):
+            return "".join([b.accept(self) for b in block.content])
+
+    return doc.accept(Indent())
+
+
+def plain(doc):
+    class Plain(object):
+        def raw_line(self, line):
+            return line.original
+
+        def logical_line(self, line):
+            return "".join([b.accept(self) for b in line.lines])
+
+        def outer_block(self, block): 
+            return "".join([b.accept(self) for b in block.content])
+
+        def inner_block(self, block):
+            return "".join([b.accept(self) for b in block.blocks])
+
+    return doc.accept(Plain())
+
+
+def print_details(doc):
+    class Details(object):
+        def __init__(self):
+            self.level = 0
+
+        def bars(self):
+            return "||| " * self.level
+
+        def raw_line(self, line):
             if line.type == "comment":
-                result += line.original
+                result = ""
+
             elif line.type == "continuation":
-                result += (" " * cont) + line.cont + spaces + line.code.lstrip()
+                self.level += 1
+                result = self.bars() + self.statement + " continued: " + line.code.lstrip()
+                self.level -= 1
+
             elif line.type == "initial":
-                after_label = " " + spaces + line.code.lstrip() 
                 if hasattr(line, 'label'):
-                    result += "{:5s}".format(str(line.label)) + after_label
+                    info = "{}[{}]: ".format(line.statement, line.label)
                 else:
-                    result += "{:5s}".format("") + after_label
-            else:
-                raise ValueError("unknown type: {}".format(line.type))
-        return result
+                    info = "{}: ".format(line.statement)
 
+                result = self.bars() + info + line.code.lstrip()
 
-    return indent_outer(doc, " ")
+            return result
+
+        def logical_line(self, line):
+            self.statement = line.statement
+            result = "".join([b.accept(self) for b in line.lines])
+            del self.statement
+            return result
+
+        def outer_block(self, block):
+            return "".join([b.accept(self) for b in block.content])
+
+        def inner_block(self, block):
+            self.level += 1
+            result = "".join([b.accept(self) for b in block.blocks])
+            self.level -= 1
+            return result
+
+    return doc.accept(Details())
+
 
 
 special = one_of(" =+-*/().,$'\":")
@@ -368,10 +404,11 @@ def keyword(string):
 
 
 from argparse import ArgumentParser
-from argcomplete import autocomplete, warn
+
 def _argument_parser_():
     parser = ArgumentParser()
-    task_list = ['remove-blanks', 'print-details', 'indent', 'new-comments']
+    task_list = ['remove-blanks', 'print-details', 
+            'indent', 'new-comments', 'plain']
     parser.add_argument("task", choices=task_list,
             metavar="task",
             help="in {}".format(task_list))
@@ -380,29 +417,29 @@ def _argument_parser_():
 
 def read_file(filename):
     with open(filename) as fl:
-        return [Line(line) for line in fl]
+        return [RawLine(line) for line in fl]
 
 def parse_file(filename):
     return parse_source(parse_into_logical_lines(read_file(filename)))
 
 if __name__ == '__main__':
     arg_parser = _argument_parser_()
-    autocomplete(arg_parser)
     args = arg_parser.parse_args()
 
     raw_lines = read_file(args.filename)
     logical_lines = parse_into_logical_lines(read_file(args.filename))
     parsed = parse_source(logical_lines)
 
-    if args.task == 'remove-blanks':
+    if args.task == 'plain':
+        print plain(parsed)
+    elif args.task == 'remove-blanks':
         print remove_blanks(raw_lines)
     elif args.task == 'indent':
         print indent(parsed)
     elif args.task == 'print-details':
-        print repr(parsed)
+        print print_details(parsed)
     elif args.task == 'new-comments':
-        # TODO
-        pass
+        print new_comments(raw_lines)
     else:
         raise ValueError("invalid choice: {}".format(args.task))
 
