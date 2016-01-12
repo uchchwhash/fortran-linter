@@ -2,6 +2,8 @@ from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, fail
 from . import join, exact, token, satisfies, singleton, EOF, parser, join_list
 
+
+
 control_nonblock_statements = [['go', 'to'], ['call'], ['return'], ['continue'], 
         ['stop'], ['pause']]
 
@@ -395,25 +397,10 @@ def print_details(doc):
 
 
 
-special = one_of(" =+-*/().,$'\":")
-name = letter + ~alphanumeric // join
-label = digit.between(1, 5) // join
 
 def keyword(string):
     return token(exact(string))
 
-
-from argparse import ArgumentParser
-
-def _argument_parser_():
-    parser = ArgumentParser()
-    task_list = ['remove-blanks', 'print-details', 
-            'indent', 'new-comments', 'plain']
-    parser.add_argument("task", choices=task_list,
-            metavar="task",
-            help="in {}".format(task_list))
-    parser.add_argument("filename")
-    return parser
 
 def read_file(filename):
     with open(filename) as fl:
@@ -421,6 +408,67 @@ def read_file(filename):
 
 def parse_file(filename):
     return parse_source(parse_into_logical_lines(read_file(filename)))
+
+
+from itertools import chain
+
+special = one_of(" =+-*/().,$'\":")
+name = letter + ~alphanumeric // join
+label = digit.between(1, 5) // join
+integer = (one_of("+-") + +digit) // join
+logical = exact(".true.") | exact(".false.")
+character = ((exact('"') + none_of('"').many() // join + exact('"'))
+        | (exact("'") + none_of("'").many() // join + exact("'")))
+
+def analyze_unit(unit):
+    assert isinstance(unit, OuterBlock)
+    statement = unit.statement
+
+    print "got ", statement
+
+    if isinstance(unit.content[0], LogicalLine):
+        print unit.content[0].statement
+        main_block = unit.content[1]
+    else:
+        print "unnamed program"
+        main_block = unit.content[0]
+
+    print main_block
+
+    local_variables = []
+
+    class Label(object):
+        def outer_block(self, block):
+            return chain(*[b.accept(self) for b in block.content])
+
+        def inner_block(self, block):
+            return chain(*[b.accept(self) for b in block.blocks])
+
+        def logical_line(self, line):
+            if hasattr(line, 'label'):
+                return [line.label]
+            else:
+                return []
+
+        def raw_line(self, line):
+            raise ValueError("raw lines should not be for this visitor")
+
+    labels = list(main_block.accept(Label()))
+
+
+
+from argparse import ArgumentParser
+
+def _argument_parser_():
+    parser = ArgumentParser()
+    task_list = ['remove-blanks', 'print-details', 
+            'indent', 'new-comments', 'plain', 'analyze']
+    parser.add_argument("task", choices=task_list,
+            metavar="task",
+            help="in {}".format(task_list))
+    parser.add_argument("filename")
+    return parser
+
 
 if __name__ == '__main__':
     arg_parser = _argument_parser_()
@@ -440,6 +488,9 @@ if __name__ == '__main__':
         print print_details(parsed)
     elif args.task == 'new-comments':
         print new_comments(raw_lines)
+    elif args.task == 'analyze':
+        for e in parsed.content:
+            analyze_unit(e)
     else:
         raise ValueError("invalid choice: {}".format(args.task))
 
