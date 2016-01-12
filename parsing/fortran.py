@@ -78,7 +78,6 @@ class Grammar(object):
     # order is important here, because 'end' should come before 'end if' et cetera
     statements["all"] = statements["executable"] + statements["non-executable"]
 
-    special = one_of("=+-*/().,$'\":")
     name = letter + alphanumeric.many() // join
     label = digit.between(1, 5) // join
     integer = (one_of("+-").optional() + +digit) // join
@@ -94,14 +93,33 @@ class Grammar(object):
     double_exponent = one_of("dD") + integer
     double = (basic_real | integer) + double_exponent
     real = double | single
+    comment = exact("!") + none_of("\n").many() // join
+    equals, plus, minus, times, slash = [exact(c) for c in "=+-*/"]
+    lparen, rparen, dot, comma, dollar = [exact(c) for c in "().,$"]
+    apostrophe, quote, colon, langle, rangle = [exact(c) for c in "'\":<>"]
 
     single_token = (character // tag_token("character") 
+            | comment // tag_token("comment")
             | logical // tag_token("logical") 
             | real // tag_token("real")
             | integer // tag_token("integer")
             | name // tag_token("name")
-            | special // tag_token("special") 
-            | wildcard)
+            | equals // tag_token("equals")
+            | plus // tag_token("plus")
+            | minus // tag_token("minus")
+            | times // tag_token("times")
+            | slash // tag_token("slash")
+            | lparen // tag_token("lparen")
+            | rparen // tag_token("rparen")
+            | dot // tag_token("dot")
+            | comma // tag_token("comma")
+            | dollar // tag_token("dollar")
+            | apostrophe // tag_token("apostrophe")
+            | quote // tag_token("quote")
+            | colon // tag_token("colon")
+            | langle // tag_token("langle")
+            | rangle // tag_token("rangle")
+            | wildcard // tag_token("unknown"))
 
     tokenizer = token(single_token).many()
     
@@ -245,7 +263,7 @@ class RawLine(object):
                 parser = parser + parsers[i]
 
             try:
-                self.statement = (parser >> msg).parse(self.code.lower())
+                self.statement = (parser >> msg).parse(self.code)
                 raise StopIteration()
             except Failure:
                 pass
@@ -281,6 +299,18 @@ class LogicalLine(object):
             self.label = initial_line.label
 
         self.code = "\n".join([l.code for l in lines if l.type != 'comment'])
+        code = self.code
+
+        if self.statement != "assignment":
+            success = succeed(True).scan(code)
+            for word in self.statement.split():
+                success = keyword(word).scan(code, success.end)
+            self.statement_ends = success.end
+        else:
+            self.statement_ends = 0
+
+        self.tokens = Grammar.tokenizer.parse(code, self.statement_ends)
+        
 
     def accept(self, visitor):
         return visitor.logical_line(self)
@@ -488,16 +518,26 @@ def analyze_unit(unit):
     assert isinstance(unit, OuterBlock)
     statement = unit.statement
 
-    print "got ", statement
-
     if isinstance(unit.content[0], LogicalLine):
-        print unit.content[0].statement
+        line = unit.content[0]
+        assert len(line.tokens) > 0
+        assert line.tokens[0].tag == 'name'
+
+        program_name = line.tokens[0].value
+        formal_params = [tok.value for tok in line.tokens[1:] if tok.tag == 'name']
+
+        print line.statement, program_name, formal_params
         main_block = unit.content[1]
+        assert len(unit.content) == 3
+
     else:
         print "unnamed program"
+        program_name = None
+        formal_params = []
         main_block = unit.content[0]
+        assert len(unit.content) == 2
 
-    #print main_block
+    print
 
     local_variables = []
 
@@ -519,6 +559,9 @@ def analyze_unit(unit):
 
     labels = list(main_block.accept(Label()))
     print "labels:", labels
+    print
+
+    names = [[]]
 
     class Token(object):
         def outer_block(self, block):
@@ -530,22 +573,17 @@ def analyze_unit(unit):
                 b.accept(self)
 
         def logical_line(self, line):
-            print print_details(line),
-
-            code = line.code
-            success = succeed(True).scan(code)
-
-            if line.statement != "assignment":
-                for word in line.statement.split():
-                    success = keyword(word).scan(code, success.end)
-
-            print Grammar.tokenizer.scan(code, success.end).value
-            print
+            names[0] += [tok.value for tok in line.tokens if tok.tag == 'name']
 
         def raw_line(self, line):
             raise ValueError("raw lines should not be for this visitor")
 
     main_block.accept(Token())
+
+    unique_names = list(set(names[0]))
+
+    print 'names:', unique_names
+    print
 
 
 from argparse import ArgumentParser
