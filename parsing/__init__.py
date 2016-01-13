@@ -1,3 +1,6 @@
+import re
+
+
 def location(text, index):
     if isinstance(text, str):
         line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
@@ -24,40 +27,26 @@ class Success(object):
         self.end = end
         self.value = value
 
-
     def __str__(self):
-        return "value {} from {} to {}".format(self.value, 
-                location(self.text, self.start), location(self.text, self.end))
+        return ("value {} from {} to {}"
+                .format(self.value, location(self.text, self.start),
+                        location(self.text, self.end)))
 
     def __repr__(self):
-        return "Success({}, {}, {}, {})".format(self.text,
-                location(self.text, self.start), location(self.text, self.end),
-                self.value)
+        return ("Success({}, {}, {}, {})"
+                .format(self.text, location(self.text, self.start),
+                        location(self.text, self.end),
+                        self.value))
 
 
 class parser(object):
     def __init__(self, me):
         '''this `me` function should return a `Success` object if successful,
         or raise a `Failure` exception if not'''
-        if isinstance(me, str):
-            desc = me
-
-            def inner(f):
-                self.me = f
-                self.desc = desc
-            return inner
-
         self.me = me
-        self.desc = None
 
     def scan(self, text, start=0):
         '''apply the parser to `text` at position `start`'''
-
-        def loc(pos, msg):
-            if pos >= len(text):
-                return msg + " at {} ".format(pos) + " on EOF"
-            else:
-                return msg + " at {} ".format(pos) + " on {}".format(text[pos])
 
         result = self.me(text, start)
         return result
@@ -85,11 +74,6 @@ class parser(object):
     def ignore(self, other):
         '''apply self, ignore result, and apply other
         (shortcut: >>)'''
-        #@parser
-        #def inner(text, start):
-        #    success = self.scan(text, start)
-        #    return other.scan(text, success.start)
-        #return inner
         return self >= (lambda _: other)
 
     def __rshift__(self, other):
@@ -149,8 +133,8 @@ class parser(object):
         def inner(text, start):
             success_self = self.scan(text, start)
             success_other = other.scan(text, success_self.end)
-            return Success(text, start, success_other.end, 
-                    success_self.value + success_other.value)
+            return Success(text, start, success_other.end,
+                           success_self.value + success_other.value)
         return inner
 
     def __add__(self, other):
@@ -168,13 +152,11 @@ class parser(object):
     def map(self, function):
         '''a parser that applies `function` on the result of self
         (shortcut: //)'''
-        #return self >= (lambda success: 
-        #        parser(lambda text, index:
-        #            Success(text, index, function(success.value))))
         @parser
         def inner(text, start):
             success = self.scan(text, start)
-            return Success(text, success.start, success.end, function(success.value))
+            return Success(text, success.start, success.end,
+                           function(success.value))
         return inner
 
     def __floordiv__(self, function):
@@ -198,7 +180,7 @@ class parser(object):
         def inner(text, start):
             result = []
             count = 0
-            
+
             current = start
 
             while count < m:
@@ -218,7 +200,6 @@ class parser(object):
 
     def times(self, n):
         '''match exactly `n` times (shortcut: *)
-        
         this is not the Kleene star (shortcut: ~)'''
         return self.between(n, n)
 
@@ -269,7 +250,7 @@ def succeed(value):
 
 def exact(string):
     '''only matches the exact `string`'''
-    @parser 
+    @parser
     def inner(text, start):
         whole = len(string)
 
@@ -332,9 +313,12 @@ def join_list(ls):
 
     return result
 
+
 def join(ls):
     return "".join(ls)
 
+
+wildcard = satisfies(lambda c: True, "")
 
 space = satisfies(lambda c: c.isspace(), "whitespace")
 
@@ -362,15 +346,16 @@ def separated_by(me, sep, empty=None):
         head = me.scan(text, start)
         tail = (~(sep >> me)).scan(text, head.end)
         return Success(text, start, tail.end, [head.value] + tail.value)
-    
+
     if empty is None:
         return inner
     else:
         return inner | empty
 
+
 def token(me):
     '''no fuss about surrounding whitespace'''
-    return whitespace >> me << whitespace 
+    return whitespace >> me << whitespace
 
 
 def matches(me, text, start=0):
@@ -380,8 +365,8 @@ def matches(me, text, start=0):
     except Failure:
         return False
 
+
 # not sure about this
-import re
 def regex(exp, flags=0):
     '''match a regex'''
     if isinstance(exp, str):
@@ -396,5 +381,3 @@ def regex(exp, flags=0):
         else:
             raise Failure(text, start, exp.pattern)
     return inner
-
-
