@@ -1,13 +1,11 @@
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, Success, spaces, wildcard
-from . import join, exact, token, satisfies, singleton, EOF, parser, join_list
+from . import join, exact, token, satisfies, singleton, EOF, parser, concat
 
 from itertools import chain
 from argparse import ArgumentParser
 
 
-def concat(ls):
-    return list(chain(*ls))
 
 
 def ignore_case(string):
@@ -53,53 +51,60 @@ class Grammar(object):
     statements["control nonblock"] = [['go', 'to'], ['call'], ['return'],
                                       ['continue'], ['stop'], ['pause']]
 
-    statements["control block"] = [['if'], ['else', 'if'], 
-                                   ['else'], ['end', 'if'], ['do'], 
+    statements["control block"] = [['if'], ['else', 'if'],
+                                   ['else'], ['end', 'if'], ['do'],
                                    ['end', 'do']]
 
-    statements["control"] = (statements["control block"] 
-                             + statements["control nonblock"])
+    statements["control"] = (statements["control block"] +
+                             statements["control nonblock"])
 
-    statements["io"] = [['read'], ['write'], ['print'], ['rewind'], 
-                        ['backspace'], ['endfile'], ['open'], ['close'], 
+    statements["io"] = [['read'], ['write'], ['print'], ['rewind'],
+                        ['backspace'], ['endfile'], ['open'], ['close'],
                         ['inquire']]
 
     statements["assign"] = [['assign']]
 
-    statements["executable"] = (statements["control"] + 
-            statements["assign"] + statements["io"])
+    statements["executable"] = (statements["control"] +
+                                statements["assign"] + statements["io"])
 
-    statements["type"] = [['integer'], ['real'], ['double', 'precision'], ['complex'],
-            ['logical'], ['character']]
+    statements["type"] = [['integer'], ['real'], ['double', 'precision'],
+                          ['complex'], ['logical'], ['character']]
 
-    statements["specification"] = statements["type"] + [['dimension'], ['common'],
-            ['equivalence'], ['implicit'], ['parameter'], ['external'], ['intrinsic'],
-            ['save']]
+    statements["specification"] = (statements["type"] +
+                                   [['dimension'], ['common'],
+                                    ['equivalence'], ['implicit'],
+                                    ['parameter'], ['external'],
+                                    ['intrinsic'], ['save']])
 
     statements["top level"] = [['program'], ['end', 'program'], ['function'],
-            ['end', 'function'], ['subroutine'], ['end', 'subroutine'],
-            ['block', 'data'], ['end', 'block', 'data'], ['end']]
+                               ['end', 'function'], ['subroutine'],
+                               ['end', 'subroutine'], ['block', 'data'],
+                               ['end', 'block', 'data'], ['end']]
 
     statements["misc nonexec"] = [['entry'], ['data'], ['format']]
 
-    statements["non-executable"] = (statements["specification"]
-            + statements["misc nonexec"] + statements["top level"])
+    statements["non-executable"] = (statements["specification"] +
+                                    statements["misc nonexec"] +
+                                    statements["top level"])
 
-    # order is important here, because 'end' should come before 'end if' et cetera
-    statements["all"] = statements["executable"] + statements["non-executable"]
+    # order is important here
+    # because 'end' should come before 'end if' et cetera
+    statements["all"] = (statements["executable"] +
+                         statements["non-executable"])
 
     name = letter + alphanumeric.many() // join
     label = digit.between(1, 5) // join
     integer = (one_of("+-").optional() + +digit) // join
     logical = exact(".true.") | exact(".false.")
-    character_segment = ((exact('"') + none_of('"').many() // join + exact('"'))
-            | (exact("'") + none_of("'").many() // join + exact("'")))
+    char_segment = ((exact('"') + none_of('"').many() // join + exact('"')) |
+                    (exact("'") + none_of("'").many() // join + exact("'")))
 
-    character = (+character_segment) // join
-    basic_real = (one_of("+-").optional() + +digit
-            + exact(".") // singleton + digit.many()) // join
+    character = (+char_segment) // join
+    basic_real = (one_of("+-").optional() + +digit +
+                  exact(".") // singleton + digit.many()) // join
     single_exponent = one_of("eE") + integer
-    single = (basic_real + single_exponent.optional() // join) | (integer + single_exponent)
+    single = ((basic_real + single_exponent.optional() // join) |
+              (integer + single_exponent))
     double_exponent = one_of("dD") + integer
     double = (basic_real | integer) + double_exponent
     real = double | single
@@ -108,36 +113,38 @@ class Grammar(object):
     lparen, rparen, dot, comma, dollar = [exact(c) for c in "().,$"]
     apostrophe, quote, colon, langle, rangle = [exact(c) for c in "'\":<>"]
 
-    single_token = (character // tag_token("character")
-            | comment // tag_token("comment")
-            | logical // tag_token("logical")
-            | real // tag_token("real")
-            | integer // tag_token("integer")
-            | name // tag_token("name")
-            | equals // tag_token("equals")
-            | plus // tag_token("plus")
-            | minus // tag_token("minus")
-            | times // tag_token("times")
-            | slash // tag_token("slash")
-            | lparen // tag_token("lparen")
-            | rparen // tag_token("rparen")
-            | dot // tag_token("dot")
-            | comma // tag_token("comma")
-            | dollar // tag_token("dollar")
-            | apostrophe // tag_token("apostrophe")
-            | quote // tag_token("quote")
-            | colon // tag_token("colon")
-            | langle // tag_token("langle")
-            | rangle // tag_token("rangle")
-            | spaces // tag_token("whitespace")
-            | wildcard // tag_token("unknown"))
+    single_token = (character // tag_token("character") |
+                    comment // tag_token("comment") |
+                    logical // tag_token("logical") |
+                    real // tag_token("real") |
+                    integer // tag_token("integer") |
+                    name // tag_token("name") |
+                    equals // tag_token("equals") |
+                    plus // tag_token("plus") |
+                    minus // tag_token("minus") |
+                    times // tag_token("times") |
+                    slash // tag_token("slash") |
+                    lparen // tag_token("lparen") |
+                    rparen // tag_token("rparen") |
+                    dot // tag_token("dot") |
+                    comma // tag_token("comma") |
+                    dollar // tag_token("dollar") |
+                    apostrophe // tag_token("apostrophe") |
+                    quote // tag_token("quote") |
+                    colon // tag_token("colon") |
+                    langle // tag_token("langle") |
+                    rangle // tag_token("rangle") |
+                    spaces // tag_token("whitespace") |
+                    wildcard // tag_token("unknown"))
 
     tokenizer = (single_token).many()
+
 
 def outer_block(statement):
     def inner(content):
         return OuterBlock(content, statement)
     return inner
+
 
 class OuterBlock(object):
     def __init__(self, content, statement):
@@ -157,6 +164,7 @@ class OuterBlock(object):
 def inner_block(content):
     return InnerBlock(content)
 
+
 class InnerBlock(object):
     def __init__(self, content):
         # this is a list of `LogicalLine`s
@@ -164,9 +172,10 @@ class InnerBlock(object):
 
         statements = Grammar.statements
 
-        non_block_statements = (statements["io"] + statements["assign"]
-                + statements["specification"] + statements["misc nonexec"]
-                + statements["control nonblock"])
+        non_block_statements = (statements["io"] + statements["assign"] +
+                                statements["specification"] +
+                                statements["misc nonexec"] +
+                                statements["control nonblock"])
 
         non_block = one_of_types(non_block_statements)
 
@@ -187,9 +196,10 @@ class InnerBlock(object):
 
         @parser
         def if_block(text, start):
-            begin = (if_statement.guard(new_style_if, "new style if") // singleton)
+            begin = (if_statement.guard(new_style_if, "new style if") //
+                     singleton)
             inner = (non_block | do_block | if_block |
-                none_of_types([["end", "if"], ["else", "if"], ["else"]]))
+                     none_of_types([["end", "if"], ["else", "if"], ["else"]]))
             else_or_else_if = else_if_statement | else_statement
 
             def inner_block_or_empty(ls):
@@ -198,28 +208,34 @@ class InnerBlock(object):
                 else:
                     return []
 
-            section = ((inner.many() // inner_block_or_empty)
-                    + else_or_else_if.optional()).guard(lambda l: l != [], "anything")
-            sections = section.many() // join_list
+            section = ((inner.many() // inner_block_or_empty) +
+                       else_or_else_if.optional()).guard(lambda l: l != [],
+                                                         "anything")
+            sections = section.many() // concat
 
             end = (end_if_statement // singleton)
 
-            result = ((begin + sections + end) // outer_block("if_block")).scan(text, start)
+            result = (((begin + sections + end) // outer_block("if_block"))
+                      .scan(text, start))
 
             return result
 
         def new_style_do(ll):
-            return not matches(keyword("do") + token(Grammar.label), ll.code.lower())
+            return not matches(keyword("do") + token(Grammar.label),
+                               ll.code.lower())
 
         @parser
         def do_block(text, start):
-            begin = do_statement.guard(new_style_do, "new style do") // singleton
+            begin = (do_statement.guard(new_style_do, "new style do") //
+                     singleton)
 
-            inner = ((non_block | do_block | if_block | none_of_types([["end", "do"]]))
-                           .many() // inner_block // singleton)
+            inner = ((non_block | do_block | if_block |
+                      none_of_types([["end", "do"]]))
+                     .many() // inner_block // singleton)
             end = end_do_statement // singleton
 
-            return ((begin + inner + end) // outer_block("do_block")).scan(text, start)
+            return (((begin + inner + end) // outer_block("do_block"))
+                    .scan(text, start))
 
         block_or_line = non_block | do_block | if_block | wildcard
 
@@ -330,10 +346,11 @@ def parse_into_logical_lines(lines):
         return satisfies(lambda l: l.type == type_name, type_name)
 
     comment, continuation, initial = (of_type(t)
-            for t in ['comment', 'continuation', 'initial'])
+                                      for t in ['comment',
+                                                'continuation', 'initial'])
 
-    logical_line = (comment.many() + initial // singleton
-                + (comment | continuation).many()) // LogicalLine
+    logical_line = (comment.many() + initial // singleton +
+                    (comment | continuation).many()) // LogicalLine
 
     return logical_line.many().parse(lines)
 
@@ -347,16 +364,19 @@ def parse_source(logical_lines):
         else:
             first_line = one_of_types([kind]) // singleton
 
-
-        mid_lines = none_of_types(statements["top level"]).many() // inner_block // singleton
+        mid_lines = (none_of_types(statements["top level"]).many() //
+                     inner_block // singleton)
         last_line = one_of_types([["end"] + kind, ["end"]]) // singleton
 
         block_statement = "_".join(kind + ["block"])
 
-        return (first_line + mid_lines + last_line) // outer_block(block_statement)
+        return ((first_line + mid_lines + last_line) //
+                outer_block(block_statement))
 
     function, subroutine, block_data = [top_level_block(kind)
-            for kind in [["function"], ["subroutine"], ["block", "data"]]]
+                                        for kind in [["function"],
+                                                     ["subroutine"],
+                                                     ["block", "data"]]]
 
     subprogram = function | subroutine | block_data
 
@@ -378,16 +398,22 @@ def one_of_list(names):
     proper_names = [" ".join(name) for name in names]
     return "one of " + ", ".join(proper_names) + " or " + " ".join(names[-1])
 
+
 def one_of_types(names):
-    return satisfies(lambda l: l.statement in [" ".join(name) for name in names],
-                one_of_list(names))
+    return satisfies(lambda l: l.statement in [" ".join(name)
+                                               for name in names],
+                     one_of_list(names))
+
 
 def none_of_types(names):
-    return satisfies(lambda l: l.statement not in [" ".join(name) for name in names],
-                one_of_list(names))
+    return satisfies(lambda l: l.statement not in [" ".join(name)
+                                                   for name in names],
+                     one_of_list(names))
+
 
 def remove_blanks(raw_lines):
-    empty = satisfies(lambda l: matches(whitespace << EOF, l.original), "empty line")
+    empty = satisfies(lambda l: matches(whitespace << EOF, l.original),
+                      "empty line")
     remove = (+empty // (lambda ls: RawLine("\n")) | wildcard).many()
     return str((remove // outer_block("source")).parse(raw_lines))
 
@@ -471,7 +497,8 @@ def print_details(doc):
 
             elif line.type == "continuation":
                 self.level += 1
-                result = self.bars() + self.statement + " continued: " + line.code.lstrip()
+                result = (self.bars() + self.statement + " continued: " +
+                          line.code.lstrip())
                 self.level -= 1
 
             elif line.type == "initial":
@@ -572,7 +599,6 @@ def analyze_unit(unit):
         main_block = unit.content[0]
         assert len(unit.content) == 2
 
-
     local_variables = []
 
     class Label(object):
@@ -627,8 +653,8 @@ def _argument_parser_():
     task_list = ['remove-blanks', 'print-details',
                  'indent', 'new-comments', 'plain', 'analyze']
     arg_parser.add_argument("task", choices=task_list,
-                        metavar="task",
-                        help="in {}".format(task_list))
+                            metavar="task",
+                            help="in {}".format(task_list))
     arg_parser.add_argument("filename")
     return arg_parser
 
