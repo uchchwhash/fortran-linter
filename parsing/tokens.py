@@ -81,7 +81,7 @@ def separated_by(me, sep, empty=None):
         return inner | empty
 
 
-def token(me):
+def liberal(me):
     '''no fuss about surrounding whitespace'''
     return whitespace >> me << whitespace
 

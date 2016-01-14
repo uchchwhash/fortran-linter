@@ -1,8 +1,9 @@
 from . import alphanumeric, letter, digit, one_of, whitespace, none_of
-from . import Failure, succeed, matches, Success, spaces, wildcard
-from . import join, exact, token, satisfies, singleton, EOF, parser, concat
+from . import Failure, succeed, matches, spaces, wildcard
+from . import join, exact, liberal, satisfies, singleton, EOF, parser, concat
 
 from argparse import ArgumentParser
+from collections import defaultdict, namedtuple
 
 
 def inexact(string):
@@ -10,7 +11,7 @@ def inexact(string):
 
 
 def keyword(string):
-    return token(inexact(string))
+    return liberal(inexact(string))
 
 
 def sum_parsers(parsers):
@@ -35,6 +36,10 @@ def tag_token(tag):
     def inner(value):
         return Token(tag, value)
     return inner
+
+
+def name_tokens(ls):
+    return [token.value.lower() for token in ls if token.tag == 'name']
 
 
 class Grammar(object):
@@ -86,32 +91,32 @@ class Grammar(object):
     statements["all"] = (statements["executable"] +
                          statements["non-executable"])
 
-
-
     intrinsics = ['abs', 'acos', 'aimag', 'aint', 'alog',
-            'alog10', 'amax10', 'amax0', 'amax1', 'amin0',
-            'amin1', 'amod', 'anint', 'asin', 'atan',
-            'atan2', 'cabs', 'ccos', 'char', 'clog',
-            'cmplx', 'conjg', 'cos', 'cosh', 'csin',
-            'csqrt', 'dabs', 'dacos', 'dasin', 'datan',
-            'datan2', 'dble', 'dcos', 'dcosh', 'ddim',
-            'dexp', 'dim', 'dint', 'dint', 'dlog', 'dlog10',
-            'dmax1', 'dmin1', 'dmod', 'dnint', 'dprod',
-            'dreal', 'dsign', 'dsin', 'dsinh', 'dsqrt',
-            'dtan', 'dtanh', 'exp', 'float', 'iabs', 'ichar',
-            'idim', 'idint', 'idnint', 'iflx', 'index',
-            'int', 'isign', 'len', 'lge', 'lgt', 'lle',
-            'llt', 'log', 'log10', 'max', 'max0', 'max1',
-            'min', 'min0', 'min1', 'mod', 'nint', 'real',
-            'sign', 'sin', 'sinh', 'sngl', 'sqrt', 'tan', 'tanh',
-            'matmul', 'cycle']
+                  'alog10', 'amax10', 'amax0', 'amax1', 'amin0',
+                  'amin1', 'amod', 'anint', 'asin', 'atan',
+                  'atan2', 'cabs', 'ccos', 'char', 'clog',
+                  'cmplx', 'conjg', 'cos', 'cosh', 'csin',
+                  'csqrt', 'dabs', 'dacos', 'dasin', 'datan',
+                  'datan2', 'dble', 'dcos', 'dcosh', 'ddim',
+                  'dexp', 'dim', 'dint', 'dint', 'dlog', 'dlog10',
+                  'dmax1', 'dmin1', 'dmod', 'dnint', 'dprod',
+                  'dreal', 'dsign', 'dsin', 'dsinh', 'dsqrt',
+                  'dtan', 'dtanh', 'exp', 'float', 'iabs', 'ichar',
+                  'idim', 'idint', 'idnint', 'iflx', 'index',
+                  'int', 'isign', 'len', 'lge', 'lgt', 'lle',
+                  'llt', 'log', 'log10', 'max', 'max0', 'max1',
+                  'min', 'min0', 'min1', 'mod', 'nint', 'real',
+                  'sign', 'sin', 'sinh', 'sngl', 'sqrt', 'tan', 'tanh',
+                  'matmul', 'cycle']
+
+    term = inexact
 
     name = letter + alphanumeric.many() // join
     label = digit.between(1, 5) // join
     integer = (one_of("+-").optional() + +digit) // join
-    logical = inexact(".true.") | inexact(".false.")
-    char_segment = ((inexact('"') + none_of('"').many() // join + inexact('"')) |
-                    (inexact("'") + none_of("'").many() // join + inexact("'")))
+    logical = term(".true.") | term(".false.")
+    char_segment = ((term('"') + none_of('"').many() // join + term('"')) |
+                    (term("'") + none_of("'").many() // join + term("'")))
 
     character = (+char_segment) // join
     basic_real = (one_of("+-").optional() + +digit +
@@ -124,12 +129,12 @@ class Grammar(object):
     real = double | single
     comment = exact("!") + none_of("\n").many() // join
     equals, plus, minus, times, slash = [exact(c) for c in "=+-*/"]
-    lt, le, eq, ne, gt, ge = [inexact(c)
+    lt, le, eq, ne, gt, ge = [term(c)
                               for c in ['.lt.', '.le.', '.eq.',
                                         '.ne.', '.gt.', '.ge.']]
-    not_, and_, or_ = [inexact(c)
+    not_, and_, or_ = [term(c)
                        for c in ['.not.', '.and.', '.or.']]
-    eqv, neqv = [inexact(c) for c in ['.eqv.', '.neqv.']]
+    eqv, neqv = [term(c) for c in ['.eqv.', '.neqv.']]
     lparen, rparen, dot, comma, dollar = [exact(c) for c in "().,$"]
     apostrophe, quote, colon, langle, rangle = [exact(c) for c in "'\":<>"]
     exponent = exact("**")
@@ -204,30 +209,18 @@ class InnerBlock(object):
     def __init__(self, logical_lines):
         statements = Grammar.statements
 
-        non_block_statements = (statements["io"] + statements["assign"] +
-                                statements["specification"] +
-                                statements["misc nonexec"] +
-                                statements["control nonblock"])
-
-        non_block = one_of_types(non_block_statements)
-
-        do_statement = one_of_types([["do"]])
-        end_do_statement = one_of_types([["end", "do"]])
-
-        if_statement = one_of_types([["if"]])
-        else_if_statement = one_of_types([["else", "if"]])
-        else_statement = one_of_types([["else"]])
-        end_if_statement = one_of_types([["end", "if"]])
-
-        def new_style_if(ll):
-            code = ll.code.lower()
-            success = keyword("if").scan(code)
-            rest = code[success.end:]
-            # this is a hack that I am currently happy with
-            return rest.find("then") != -1
-
         @parser
         def if_block(text, start):
+            def new_style_if(ll):
+                then = [token for token in name_tokens(ll.tokens_after)
+                        if token == 'then']
+                return len(then) > 0
+
+            if_statement = one_of_types([["if"]])
+            else_if_statement = one_of_types([["else", "if"]])
+            else_statement = one_of_types([["else"]])
+            end_if_statement = one_of_types([["end", "if"]])
+
             begin = (if_statement.guard(new_style_if, "new style if") //
                      singleton)
             inner = (non_block | do_block | if_block |
@@ -252,12 +245,15 @@ class InnerBlock(object):
 
             return result
 
-        def new_style_do(ll):
-            return not matches(keyword("do") + token(Grammar.label),
-                               ll.code.lower())
-
         @parser
         def do_block(text, start):
+            def new_style_do(ll):
+                return not matches(keyword("do") + liberal(Grammar.label),
+                                   ll.code.lower())
+
+            do_statement = one_of_types([["do"]])
+            end_do_statement = one_of_types([["end", "do"]])
+
             begin = (do_statement.guard(new_style_do, "new style do") //
                      singleton)
 
@@ -268,6 +264,11 @@ class InnerBlock(object):
 
             return (((begin + inner + end) // outer_block("do_block"))
                     .scan(text, start))
+
+        non_block = one_of_types(statements["io"] + statements["assign"] +
+                                 statements["specification"] +
+                                 statements["misc nonexec"] +
+                                 statements["control nonblock"])
 
         block_or_line = non_block | do_block | if_block | wildcard
 
@@ -298,7 +299,7 @@ class RawLine(object):
 
         self.code = line[margin_column:]
         self.tokens = Grammar.tokenizer.parse(self.code)
-        self.non_statement_tokens = self.tokens
+        self.tokens_after = self.tokens
 
         if len(lowered) > continuation_column:
             if matches(none_of("0 "), lowered, continuation_column):
@@ -311,8 +312,7 @@ class RawLine(object):
 
         statement_label = lowered[:continuation_column]
         if len(statement_label.strip()) > 0:
-            self.label = (token(Grammar.label) // int).parse(statement_label)
-
+            self.label = (liberal(Grammar.label) // int).parse(statement_label)
 
         def check(words):
             msg = succeed(" ".join(words))
@@ -323,8 +323,8 @@ class RawLine(object):
                 tokenizer = Grammar.tokenizer
 
                 self.statement = success.value
-                self.non_statement_tokens = tokenizer.parse(self.code, 
-                                                            success.end)
+                self.tokens_after = tokenizer.parse(self.code,
+                                                    success.end)
                 raise StopIteration()
             except Failure:
                 pass
@@ -361,11 +361,11 @@ class LogicalLine(object):
         except AttributeError:
             pass
 
-        self.code = "\n".join([l.code for l in children if l.type != 'comment'])
-        self.tokens = concat([l.tokens for l in children if l.type != 'comment'])
-        self.non_statement_tokens = concat([l.non_statement_tokens 
-                                            for l in children 
-                                            if l.type != 'comment'])
+        code_lines = [l for l in children if l.type != 'comment']
+
+        self.code = "\n".join([l.code for l in code_lines])
+        self.tokens = concat([l.tokens for l in code_lines])
+        self.tokens_after = concat([l.tokens_after for l in code_lines])
 
     def accept(self, visitor):
         return visitor.logical_line(self)
@@ -520,6 +520,7 @@ def print_details(doc):
     class Details(Visitor):
         def __init__(self):
             self.level = 0
+            self.statement = None
 
         def raw_line(self, line):
             if line.type == "comment":
@@ -579,14 +580,14 @@ def reconstruct(unit):
                 except AttributeError:
                     result = " " * marg_col
 
-            for tok in line.tokens:
-                result += tok.value
+            for token in line.tokens:
+                result += token.value
             return [result]
 
     return Reconstruct().top_level(unit)
 
 
-def analyze(source):
+def collect_unit_names(source):
     unit_names = []
 
     for unit in source.children:
@@ -595,7 +596,13 @@ def analyze(source):
         first = unit.children[0]
 
         if isinstance(first, LogicalLine):
-            unit_names.append(non_statement_names(first)[0])
+            unit_names.append(mentioned_names(first)[0])
+
+    return unit_names
+
+
+def analyze(source):
+    unit_names = collect_unit_names(source)
 
     print 'units:', unit_names
     print
@@ -604,58 +611,91 @@ def analyze(source):
         analyze_unit(unit, unit_names)
 
 
-def non_statement_names(line):
-    return [tok.value.lower() 
-            for tok in line.non_statement_tokens if tok.tag == 'name']
-    
+def mentioned_names(line):
+    return [token for token in name_tokens(line.tokens_after)]
 
-def analyze_unit(unit, unit_names):
+
+def analyze_header(unit):
     first = unit.children[0]
+
     if isinstance(first, LogicalLine):
-        tokens = [tok for tok in first.non_statement_tokens
-                  if tok.tag != 'whitespace' and tok.tag != 'comment']
+        statement = first.statement
+
+        tokens = [token for token in first.tokens_after
+                  if token.tag != 'whitespace' and token.tag != 'comment']
 
         assert len(tokens) > 0
         assert tokens[0].tag == 'name', "got {}".format(tokens[0].tag)
 
         program_name = tokens[0].value
-        formal_params = [tok.value for tok in tokens[1:] if tok.tag == 'name']
+        formal_params = name_tokens(tokens[1:])
 
-        print first.statement, program_name, formal_params
-        print
-        main_block = unit.children[1]
         assert len(unit.children) == 3
+        main_block = unit.children[1]
 
     else:
-        print "unnamed program"
-        print
+        statement = "program"
         program_name = None
         formal_params = []
-        main_block = unit.children[0]
-        assert len(unit.children) == 2
 
+        assert len(unit.children) == 2
+        main_block = unit.children[0]
+
+    return statement, program_name, formal_params, main_block
+
+
+def analyze_labels(unit, main_block):
     class Label(Visitor):
+        def __init__(self):
+            self.current_line = 0
+
         def logical_line(self, line):
+            self.current_line += 1
+
             try:
                 if line.statement != 'format':
-                    return [line.label]
+                    return [(self.current_line, line.label)]
             except AttributeError:
                 pass
 
             return []
 
-
-    labels = unit.accept(Label())
+    labels = main_block.accept(Label())
     if labels:
-        print "labels:", labels
+        print "labels:", [lbl for _, lbl in labels]
         print
 
+    occur_dict = defaultdict(list)
 
+    for decl_line, lbl in labels:
+        class Occurrences(Visitor):
+            def __init__(self):
+                self.current_line = 0
+
+            def logical_line(self, line):
+                self.current_line += 1
+
+                int_tokens = [int(token.value) 
+                              for token in line.tokens_after
+                              if token.tag == 'integer']
+                if lbl in int_tokens:
+                    occur_dict[lbl].append(self.current_line)
+
+                return []
+
+        main_block.accept(Occurrences())
+
+    for decl_line, lbl in labels:
+        print lbl, '@' + str(decl_line), occur_dict[lbl]
+    print
+
+
+def analyze_variables(unit, unit_names, formal_params, main_block):
     class Variables(Visitor):
         def logical_line(self, line):
             if line.statement == 'format':
                 return []
-            return non_statement_names(line)
+            return mentioned_names(line)
 
     unique_names = list(set(main_block.accept(Variables())))
 
@@ -664,16 +704,19 @@ def analyze_unit(unit, unit_names):
 
     class Locals(Visitor):
         def logical_line(self, line):
-            if line.statement in specs:
-                return non_statement_names(line)
-            else:
+            if line.statement not in specs:
                 return []
 
-    local_variables = list(set(main_block.accept(Locals())))
-    #print 'local variables: ', local_variables
-    #print
+            name_list = mentioned_names(line)
 
-    keywords = list(set(concat(Grammar.statements["all"]))) + ['then']
+            if line.statement == 'implicit' and name_list == ['none']:
+                return []
+
+            return name_list
+
+    local_variables = list(set(main_block.accept(Locals())))
+
+    keywords = list(set(concat(Grammar.statements["all"]))) + ['then', 'none']
 
     local_names = list(set(local_variables + formal_params))
 
@@ -683,6 +726,69 @@ def analyze_unit(unit, unit_names):
     if unaccounted_for:
         print 'unaccounted_for:', unaccounted_for
         print
+
+    concern = list(set(local_variables + unaccounted_for))
+
+    occur_dict = defaultdict(list)
+
+    last_line = [0]
+
+    for var in concern:
+        class Occurrences(Visitor):
+            def __init__(self):
+                self.current_line = 0
+
+            def logical_line(self, line):
+                self.current_line += 1
+                last_line[0] = self.current_line
+                if line.statement not in specs:
+                    if var in name_tokens(line.tokens_after):
+                        occur_dict[var].append(self.current_line)
+
+                return []
+
+        main_block.accept(Occurrences())
+
+    never_occur_list = [var for var in concern if occur_dict[var] == []]
+
+    if never_occur_list:
+        print 'never occurred:', never_occur_list
+        print
+
+    Interval = namedtuple('Interval', ['var', 'start', 'end'])
+
+    occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1]) 
+                  for var in occur_dict if occur_dict[var] != []]
+
+    occur_list = sorted(occur_list, key=lambda x: x.start)
+    last_line = last_line[0]
+
+    graph_cols = 60
+    def graph_pos(lineno):
+        return int(round((float(lineno) / last_line) * graph_cols))
+
+
+    graph_list = [Interval(d.var, graph_pos(d.start), graph_pos(d.end))
+                  for d in occur_list]
+
+    for d in graph_list:
+        print "{:10s}|{}{}{}|".format(d.var, 
+                                      " " * d.start,
+                                      "=" * (d.end - d.start + 1),
+                                      " " * (graph_cols - d.end))
+
+    print
+
+
+def analyze_unit(unit, unit_names):
+    statement, program_name, formal_params, main_block = analyze_header(unit)
+
+    print statement, program_name, formal_params
+    print
+
+    analyze_labels(unit, main_block)
+
+    analyze_variables(unit, unit_names, formal_params, main_block)
 
 
 def _argument_parser_():
