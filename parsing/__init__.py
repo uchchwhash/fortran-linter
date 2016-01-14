@@ -9,5 +9,3 @@ from .tokens import letter, word, digit, digits
 from .tokens import alphanumeric, alphanumerics
 from .tokens import exact, token
 from .tokens import regex
-
-

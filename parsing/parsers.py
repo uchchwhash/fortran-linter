@@ -1,6 +1,6 @@
 import types
-import copy
 from itertools import chain
+
 
 def location(text, index):
     if isinstance(text, str):
@@ -43,43 +43,43 @@ class Success(object):
 def parser(param):
     class ParsingFunction(AbstractParser):
         def __init__(self, me, expected):
-            '''this `me` function should return a `Success` object if successful,
-            or raise a `Failure` exception if not'''
+            '''this `me` function should return a `Success` object
+            if successful, or raise a `Failure` exception if not'''
             self.me = me
             self.expected = expected
 
         def scan(self, text, start=0):
-	    try:
+            try:
                 return self.me(text, start)
-	    except Failure as failure:
-		if self.expected is None:
+            except Failure as failure:
+                if self.expected is None:
                     raise failure
                 else:
-		    raise Failure(text, start, self.expected)
+                    raise Failure(text, start, self.expected)
 
     if isinstance(param, str) or isinstance(param, unicode):
         expected = param
 
         def inner(me):
-	    return ParsingFunction(me, expected)
+            return ParsingFunction(me, expected)
 
         return inner
 
     elif isinstance(param, types.FunctionType):
-	expected = None
-	me = param
+        expected = None
+        me = param
 
-	return ParsingFunction(me, expected)
+        return ParsingFunction(me, expected)
 
     else:
-	raise ValueError("param {} is neither a string nor a function"
-		         .format(param))
+        raise ValueError("param {} is neither a string nor a function"
+                         .format(param))
 
 
 class AbstractParser(object):
 
     def scan(self, text, start=0):
-	'''virtual method that subclasses should override
+        '''virtual method that subclasses should override
         returns a `Success` object or raises `Failure`'''
         raise NotImplementedError("scan not implemented in AbstractParser")
 
@@ -90,12 +90,12 @@ class AbstractParser(object):
     def ignore(self, other):
         '''apply self, ignore result, and apply other
         (shortcut: >>)'''
-	@parser
-	def inner(text, start):
-	    success_self = self.scan(text, start)
-	    success_other = other.scan(text, success_self.end)
-	    return Success(text, start, success_other.end, success_other.value)
-	return inner
+        @parser
+        def inner(text, start):
+            success_self = self.scan(text, start)
+            success_other = other.scan(text, success_self.end)
+            return Success(text, start, success_other.end, success_other.value)
+        return inner
 
     def __rshift__(self, other):
         '''>> is shortcut for ignore'''
@@ -143,10 +143,10 @@ class AbstractParser(object):
 
     def label(self, expected):
         '''labels a failure with `expected` (shortcut: %)'''
-	@parser(expected)
-	def inner(text, start):
-	    return self.scan(text, start)
-	return inner
+        @parser(expected)
+        def inner(text, start):
+            return self.scan(text, start)
+        return inner
 
     def __mod__(self, expected):
         '''% is shortcut for label'''
@@ -234,6 +234,7 @@ class AbstractParser(object):
         '''+ is shortcut for at_least_once'''
         return self.at_least_once()
 
+
 def merge_parser_lists(this, that, kind):
     if isinstance(this, kind):
         if isinstance(that, kind):
@@ -248,12 +249,12 @@ def merge_parser_lists(this, that, kind):
 
 
 def merge_expected(this, that, conjunction):
-        if this.expected is None:
-            return that.expected
-        elif that.expected is None:
-            return this.expected
-        else:
-            return this.expected + conjunction + that.expected
+    if this.expected is None:
+        return that.expected
+    elif that.expected is None:
+        return this.expected
+    else:
+        return this.expected + conjunction + that.expected
 
 
 class ChoiceNoBacktrackParser(AbstractParser):
@@ -283,7 +284,7 @@ class ChoiceParser(AbstractParser):
         for this in self.parsers:
             try:
                 return this.scan(text, start)
-            except Failure as f:
+            except Failure:
                 pass
 
         raise Failure(text, start, self.expected)
@@ -320,7 +321,7 @@ def succeed(value):
     equivalent to `return` in Haskell'''
     @parser("never")
     def inner(text, start):
-	return Success(text, start, start, value)
+        return Success(text, start, start, value)
     return inner
 
 
@@ -336,6 +337,7 @@ def _EOF():
 
 
 EOF = _EOF()
+
 
 def singleton(string):
     # interesting alternative names: capture, lift

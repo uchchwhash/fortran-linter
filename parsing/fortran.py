@@ -2,30 +2,11 @@ from . import alphanumeric, letter, digit, one_of, whitespace, none_of
 from . import Failure, succeed, matches, Success, spaces, wildcard
 from . import join, exact, token, satisfies, singleton, EOF, parser, concat
 
-from itertools import chain
 from argparse import ArgumentParser
 
 
-
-
-def ignore_case(string):
-    '''matches `string`, ignores case'''
-    string_lower = string.lower()
-
-    @parser
-    def inner(text, start):
-        whole = len(string_lower)
-
-        if text[start: start + whole].lower() == string_lower:
-            return Success(text, start, start + whole, string_lower)
-        else:
-            raise Failure(text, start, repr(string_lower))
-
-    return inner
-
-
 def keyword(string):
-    return token(ignore_case(string))
+    return token(exact(string, ignore_case=True))
 
 
 class Token(object):
@@ -432,7 +413,24 @@ def new_comments(raw_lines):
     return str((upgrade.many() // outer_block("source")).parse(raw_lines))
 
 
-def indent(doc, indent_width=3):
+class Visitor(object):
+    def raw_line(self, line):
+        return [line.original]
+
+    def logical_line(self, line):
+        return concat([l.accept(self) for l in line.lines])
+
+    def inner_block(self, block):
+        return concat([b.accept(self) for b in block.blocks])
+
+    def outer_block(self, block):
+        return concat([b.accept(self) for b in block.lines])
+
+    def top_level(self, block):
+        return block.accept(self)
+
+
+def indent(doc, indent_width=4):
     margin_column = Grammar.margin_column
 
     class Indent(object):
@@ -440,7 +438,6 @@ def indent(doc, indent_width=3):
             self.current = 1
 
         def raw_line(self, line):
-            original = line.original
             if line.type == 'comment':
                 return line.original
             code = line.code
@@ -573,7 +570,6 @@ def reconstruct(unit):
 
 def analyze_unit(unit):
     assert isinstance(unit, OuterBlock)
-    statement = unit.statement
 
     first = unit.content[0]
     if isinstance(first, LogicalLine):
@@ -599,8 +595,6 @@ def analyze_unit(unit):
         main_block = unit.content[0]
         assert len(unit.content) == 2
 
-    local_variables = []
-
     class Label(object):
         def outer_block(self, block):
             return concat([b.accept(self) for b in block.content])
@@ -623,7 +617,7 @@ def analyze_unit(unit):
 
     names = [[]]
 
-    class Token(object):
+    class Tokenize(object):
         def outer_block(self, block):
             for b in block.content:
                 b.accept(self)
@@ -638,7 +632,7 @@ def analyze_unit(unit):
         def raw_line(self, line):
             raise ValueError("raw lines should not be for this visitor")
 
-    main_block.accept(Token())
+    main_block.accept(Tokenize())
 
     unique_names = list(set(names[0]))
 
@@ -659,7 +653,7 @@ def _argument_parser_():
     return arg_parser
 
 
-if __name__ == '__main__':
+def main():
     arg_parser = _argument_parser_()
     args = arg_parser.parse_args()
 
@@ -682,3 +676,7 @@ if __name__ == '__main__':
             analyze_unit(e)
     else:
         raise ValueError("invalid choice: {}".format(args.task))
+
+
+if __name__ == '__main__':
+    main()

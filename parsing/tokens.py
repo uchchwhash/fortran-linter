@@ -3,13 +3,21 @@ from .parsers import Success, Failure
 
 import re
 
-def exact(string):
+
+def exact(string, ignore_case=False):
     '''only matches the exact `string`'''
+    if ignore_case:
+        string = string.lower()
+
     @parser(repr(string))
     def inner(text, start):
         whole = len(string)
 
-        if text[start: start + whole] == string:
+        segment = text[start: start + whole]
+        if ignore_case:
+            segment = segment.lower()
+
+        if segment == string:
             return Success(text, start, start + whole, string)
         else:
             raise Failure(text, start, repr(string))
@@ -93,4 +101,3 @@ def regex(exp, flags=0):
         else:
             raise Failure(text, start, exp.pattern)
     return inner
-

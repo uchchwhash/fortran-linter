@@ -56,7 +56,7 @@ class TestBasic(unittest.TestCase):
         self.match(test, text, "mocha", len("mocha"))
 
         test = exact("hi") ^ exact("there")
-        self.fail(test, text, repr("'hi' or 'there'"), 0)
+        self.fail(test, text, "'hi' or 'there'", 0)
 
     def test_try_choice(self):
         text = "interpol"
