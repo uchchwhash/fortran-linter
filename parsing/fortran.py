@@ -652,6 +652,28 @@ def analyze_header(unit):
 
     return statement, program_name, formal_params, main_block
 
+Interval = namedtuple('Interval', ['var', 'start', 'end'])
+
+def make_timeline(occur_dict):
+    occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1])
+                  for var in occur_dict if occur_dict[var] != []]
+    return sorted(occur_list, key=lambda x: x.start)
+
+def draw_timeline(occur_list, last_line, graph_cols=60):
+    def graph_pos(lineno):
+        return int(round((float(lineno) / last_line) * graph_cols))
+
+    graph_list = [Interval(d.var, graph_pos(d.start), graph_pos(d.end))
+                  for d in occur_list]
+
+    for d in graph_list:
+        print "{:10s}|{}{}{}|".format(str(d.var),
+                                      " " * d.start,
+                                      "=" * (d.end - d.start + 1),
+                                      " " * (graph_cols - d.end))
+
+    print
+
 
 def analyze_labels(unit, main_block):
     class Label(Visitor):
@@ -675,6 +697,7 @@ def analyze_labels(unit, main_block):
         print
 
     occur_dict = defaultdict(list)
+    last_line = [0]
 
     for decl_line, lbl in labels:
         class Occurrences(Visitor):
@@ -683,8 +706,9 @@ def analyze_labels(unit, main_block):
 
             def logical_line(self, line):
                 self.current_line += 1
+                last_line[0] = self.current_line
 
-                int_tokens = [int(token.value) 
+                int_tokens = [int(token.value)
                               for token in line.tokens_after
                               if token.tag == 'integer']
                 if lbl in int_tokens:
@@ -696,7 +720,10 @@ def analyze_labels(unit, main_block):
 
     for decl_line, lbl in labels:
         print lbl, '@' + str(decl_line), occur_dict[lbl]
+        occur_dict[lbl] = sorted(occur_dict[lbl] + [decl_line])
     print
+
+    draw_timeline(make_timeline(occur_dict), last_line[0])
 
 
 def analyze_variables(unit, unit_names, formal_params, main_block):
@@ -764,30 +791,31 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
         print 'never occurred:', never_occur_list
         print
 
-    Interval = namedtuple('Interval', ['var', 'start', 'end'])
+    for var in occur_dict:
+        print var, occur_dict[var]
 
-    occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1]) 
+    draw_timeline(make_timeline(occur_dict), last_line[0])
+
+    occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1])
                   for var in occur_dict if occur_dict[var] != []]
+    break_at = 365
+    before_list = sorted([d for d in occur_list if d.end < break_at],
+            key=lambda x: x.start)
+    
+    print 'before:'
+    draw_timeline(before_list, last_line[0])
 
-    occur_list = sorted(occur_list, key=lambda x: x.start)
-    last_line = last_line[0]
+    after_list = sorted([d for d in occur_list if d.start > break_at],
+            key=lambda x: x.start)
 
-    graph_cols = 60
-    def graph_pos(lineno):
-        return int(round((float(lineno) / last_line) * graph_cols))
+    print 'after:'
+    draw_timeline(after_list, last_line[0])
 
+    confused_list = sorted(list(set(occur_list) - set(before_list) 
+        - set(after_list)), key=lambda x: x.start)
 
-    graph_list = [Interval(d.var, graph_pos(d.start), graph_pos(d.end))
-                  for d in occur_list]
-
-    for d in graph_list:
-        print "{:10s}|{}{}{}|".format(d.var, 
-                                      " " * d.start,
-                                      "=" * (d.end - d.start + 1),
-                                      " " * (graph_cols - d.end))
-
-    print
-
+    print 'confused:'
+    draw_timeline(confused_list, last_line[0])
 
 def analyze_unit(unit, unit_names):
     statement, program_name, formal_params, main_block = analyze_header(unit)
