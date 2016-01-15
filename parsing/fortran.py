@@ -515,6 +515,15 @@ def indent(doc, indent_width=4):
 def plain(doc):
     return Visitor().top_level(doc)
 
+def remove_comments(doc):
+    class Remove(Visitor):
+        def raw_line(self, line):
+            if line.type == 'comment':
+                return []
+            else:
+                return [line.original]
+
+    return Remove().top_level(doc)
 
 def print_details(doc):
     class Details(Visitor):
@@ -795,7 +804,7 @@ def _argument_parser_():
     arg_parser = ArgumentParser()
     task_list = ['remove-blanks', 'print-details',
                  'indent', 'new-comments', 'plain', 'analyze',
-                 'reconstruct']
+                 'reconstruct', 'remove-comments']
     arg_parser.add_argument("task", choices=task_list,
                             metavar="task",
                             help="in {}".format(task_list))
@@ -813,6 +822,8 @@ def main():
 
     if args.task == 'plain':
         print plain(parsed),
+    elif args.task == 'remove-comments':
+        print remove_comments(parsed)
     elif args.task == 'remove-blanks':
         print remove_blanks(raw_lines),
     elif args.task == 'indent':
