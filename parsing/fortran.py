@@ -785,7 +785,7 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
 
         main_block.accept(Occurrences())
 
-    never_occur_list = [var for var in concern if occur_dict[var] == []]
+    never_occur_list = sorted([var for var in concern if occur_dict[var] == []])
 
     if never_occur_list:
         print 'never occurred:', never_occur_list
