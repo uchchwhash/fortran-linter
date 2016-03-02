@@ -796,26 +796,26 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
 
     draw_timeline(make_timeline(occur_dict), last_line[0])
 
-    occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1])
-                  for var in occur_dict if occur_dict[var] != []]
-    break_at = 365
-    before_list = sorted([d for d in occur_list if d.end < break_at],
-            key=lambda x: x.start)
-    
-    print 'before:'
-    draw_timeline(before_list, last_line[0])
+    #occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1])
+    #              for var in occur_dict if occur_dict[var] != []]
+    #break_at = 365
+    #before_list = sorted([d for d in occur_list if d.end < break_at],
+    #        key=lambda x: x.start)
+    #
+    #print 'before:'
+    #draw_timeline(before_list, last_line[0])
 
-    after_list = sorted([d for d in occur_list if d.start > break_at],
-            key=lambda x: x.start)
+    #after_list = sorted([d for d in occur_list if d.start > break_at],
+    #        key=lambda x: x.start)
 
-    print 'after:'
-    draw_timeline(after_list, last_line[0])
+    #print 'after:'
+    #draw_timeline(after_list, last_line[0])
 
-    confused_list = sorted(list(set(occur_list) - set(before_list) 
-        - set(after_list)), key=lambda x: x.start)
+    #confused_list = sorted(list(set(occur_list) - set(before_list) 
+    #    - set(after_list)), key=lambda x: x.start)
 
-    print 'confused:'
-    draw_timeline(confused_list, last_line[0])
+    #print 'confused:'
+    #draw_timeline(confused_list, last_line[0])
 
 def analyze_unit(unit, unit_names):
     statement, program_name, formal_params, main_block = analyze_header(unit)
