@@ -1,3 +1,7 @@
+"""
+An implementation of parser combinators. Includes a use case of a Fortran
+77 linter.
+"""
 from .parsers import location
 from .parsers import Success, Failure, fail, succeed, parser
 from .parsers import EOF

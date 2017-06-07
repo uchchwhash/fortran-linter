@@ -1,8 +1,17 @@
+"""
+Some useful parser combinators.
+"""
+
 import types
 from itertools import chain
 
 
 def location(text, index):
+    """
+    Location of `index` in the `text`. Report row and column numbers when
+    appropriate.
+
+    """
     if isinstance(text, str):
         line, start = text.count('\n', 0, index), text.rfind('\n', 0, index)
         column = index - (start + 1)
@@ -12,6 +21,7 @@ def location(text, index):
 
 
 class Failure(Exception):
+    """ Represents parsing failure. Can be raised as an `Exception`. """
     def __init__(self, text, start, expected):
         self.text = text
         self.start = start
@@ -20,8 +30,16 @@ class Failure(Exception):
         self.msg = "expected {} at {}".format(expected, location(text, start))
         super(Failure, self).__init__(self.msg)
 
+    def __str__(self):
+        return self.msg
+
+    def __repr__(self):
+        return ("Failure({}, {}, {})"
+                .format(self.text, self.start, self.expected))
+
 
 class Success(object):
+    """ Represents parsing success. Stores the parsed value. """
     def __init__(self, text, start, end, value):
         self.text = text
         self.start = start
@@ -40,56 +58,23 @@ class Success(object):
                         self.value))
 
 
-def parser(param):
-    class ParsingFunction(AbstractParser):
-        def __init__(self, me, expected):
-            '''this `me` function should return a `Success` object
-            if successful, or raise a `Failure` exception if not'''
-            self.me = me
-            self.expected = expected
-
-        def scan(self, text, start=0):
-            try:
-                return self.me(text, start)
-            except Failure as failure:
-                if self.expected is None:
-                    raise failure
-                else:
-                    raise Failure(text, start, self.expected)
-
-    if isinstance(param, str) or isinstance(param, unicode):
-        expected = param
-
-        def inner(me):
-            return ParsingFunction(me, expected)
-
-        return inner
-
-    elif isinstance(param, types.FunctionType):
-        expected = None
-        me = param
-
-        return ParsingFunction(me, expected)
-
-    else:
-        raise ValueError("param {} is neither a string nor a function"
-                         .format(param))
-
-
 class AbstractParser(object):
 
     def scan(self, text, start=0):
-        '''virtual method that subclasses should override
-        returns a `Success` object or raises `Failure`'''
+        """
+        A virtual method that subclasses should override.
+        Returns a `Success` object or raises `Failure`.
+        """
         raise NotImplementedError("scan not implemented in AbstractParser")
 
     def parse(self, text, start=0):
-        '''apply parser and return success value'''
+        """ Apply the parser and return success value assuming it succeeds. """
         return self.scan(text, start).value
 
     def ignore(self, other):
-        '''apply self, ignore result, and apply other
-        (shortcut: >>)'''
+        """
+        Apply self, ignore result, and apply other (shortcut: >>).
+        """
         @parser
         def inner(text, start):
             success_self = self.scan(text, start)
@@ -98,12 +83,11 @@ class AbstractParser(object):
         return inner
 
     def __rshift__(self, other):
-        '''>> is shortcut for ignore'''
+        """ >> is shortcut for ignore. """
         return self.ignore(other)
 
     def ignore_following(self, other):
-        '''apply self, apply other, return result of self
-        (shortcut: <<)'''
+        """ Apply self, apply other, return result of self (shortcut: <<). """
         @parser
         def inner(text, start):
             success_self = self.scan(text, start)
@@ -112,49 +96,48 @@ class AbstractParser(object):
         return inner
 
     def __lshift__(self, other):
-        '''<< is shortcut for ignore_following'''
+        """ << is shortcut for ignore_following. """
         return self.ignore_following(other)
 
     def choice_no_backtrack(self, other):
-        '''if self fails and does not consume anything, applies other
-        (shortcut: ^)'''
+        """ If self fails and does not consume anything, applies other (shortcut: ^). """
         return ChoiceNoBacktrackParser(self, other)
 
     def __xor__(self, other):
-        '''^ is shortcut for choice'''
+        """ ^ is shortcut for `choice_no_backtrack`. """
         return self.choice_no_backtrack(other)
 
     def choice(self, other):
-        '''if self fails, applies other (shortcut: |)'''
+        """ If self fails, applies other (shortcut: |). """
         return ChoiceParser(self, other)
 
     def __or__(self, other):
-        '''| is shortcut for try_choice'''
+        """ | is shortcut for `choice`. """
         return self.choice(other)
 
     def seq(self, other):
-        '''applies self, then applies other, and returns the sum of results
-        (shortcut: +)'''
+        """ Applies self, then applies other, and returns the sum of results (shortcut: +). """
         return SequenceParser(self, other)
 
     def __add__(self, other):
-        '''+ is shortcut for seq'''
+        """ + is shortcut for `seq`. """
         return self.seq(other)
 
     def label(self, expected):
-        '''labels a failure with `expected` (shortcut: %)'''
+        """ Labels a failure with `expected` (shortcut: %). """
         @parser(expected)
         def inner(text, start):
             return self.scan(text, start)
         return inner
 
     def __mod__(self, expected):
-        '''% is shortcut for label'''
+        """ % is shortcut for `label`. """
         return self.label(expected)
 
     def map(self, function):
-        '''a parser that applies `function` on the result of self
-        (shortcut: //)'''
+        """
+        A parser that applies `function` on the result of self (shortcut: //).
+        """
         @parser
         def inner(text, start):
             success = self.scan(text, start)
@@ -235,6 +218,53 @@ class AbstractParser(object):
         return self.at_least_once()
 
 
+def parser(param):
+    """
+    Construct a parser from either a given function object or a string to match.
+    """
+    class ParsingFunction(AbstractParser):
+        """
+        A class to hold the parsing function.
+        """
+        def __init__(self, this, expected):
+            """
+            The function `this` should return a `Success` object if successful, or
+            raise a `Failure` exception if not.
+            """
+            self.this = this
+            self.expected = expected
+
+        def scan(self, text, start=0):
+            """
+            Run the parsing function.
+            """
+            try:
+                return self.this(text, start)
+            except Failure as failure:
+                if self.expected is None:
+                    raise failure
+                else:
+                    raise Failure(text, start, self.expected)
+
+    if isinstance(param, str) or isinstance(param, unicode):
+        expected = param
+
+        def inner(this):
+            return ParsingFunction(this, expected)
+
+        return inner
+
+    elif isinstance(param, types.FunctionType):
+        expected = None
+        this = param
+
+        return ParsingFunction(this, expected)
+
+    else:
+        raise ValueError("param {} is neither a string nor a function"
+                         .format(param))
+
+
 def merge_parser_lists(this, that, kind):
     if isinstance(this, kind):
         if isinstance(that, kind):
@@ -307,8 +337,10 @@ class SequenceParser(AbstractParser):
 
 
 def fail(desc):
-    '''a parser that fails without consuming input by raising
-    an exception with message `desc`'''
+    """
+    A parser that fails without consuming input by raising
+    an exception with message `desc`.
+    """
     @parser(desc)
     def inner(text, start):
         raise Failure(text, start, desc)
@@ -316,9 +348,11 @@ def fail(desc):
 
 
 def succeed(value):
-    '''a parser which always succeeds without consuming input
-    and returns given `value`
-    equivalent to `return` in Haskell'''
+    """
+    A parser which always succeeds without consuming input
+    and returns given `value`.
+    Equivalent to `return` in Haskell.
+    """
     @parser("never")
     def inner(text, start):
         return Success(text, start, start, value)
@@ -326,7 +360,7 @@ def succeed(value):
 
 
 def _EOF():
-    '''only matches EOF'''
+    """ Only matches EOF. """
     @parser("<EOF>")
     def inner(text, start):
         if start >= len(text):
@@ -340,23 +374,28 @@ EOF = _EOF()
 
 
 def singleton(string):
+    """
+    Return a list with a single member.
+    Useful when collecting result of parsers chained by `seq`.
+    """
     # interesting alternative names: capture, lift
-    '''return a list with a single member
-    useful when collecting result of parsers chained by `seq`'''
     return [string]
 
 
-def concat(ls):
-    return list(chain(*ls))
+def concat(list_of_lists):
+    """ Concatenates a list of lists. """
+    return list(chain(*list_of_lists))
 
 
-def join(ls):
-    return "".join(ls)
+def join(list_of_str):
+    """ Joins a list of strings. """
+    return "".join(list_of_str)
 
 
-def matches(me, text, start=0):
+def matches(this, text, start=0):
+    """ Returns whether the parser `this` matches the `text`. """
     try:
-        _ = me.scan(text, start)
+        _ = this.scan(text, start)
         return True
     except Failure:
         return False
