@@ -1,0 +1,30 @@
+* About
+*fortran-linter* is a utility program to analyze Fortran 77 legacy code. We sure
+have a lot of those lying around.
+
+* License
+MIT
+
+* Testing
+Run `make test` from the root folder.
+
+* Prior art
+** Fortran grammar
+I found an EBNF (Extended Backus–Naur form) of the Fortran 77 grammar [[http://www.faqs.org/qa/qa-9372.html][here]]. So
+far it seems to comply well with the official [[http://www.fortran.com/F77_std/rjcnf0001.html][standard]].
+
+** Parser combinators
+This approach of parser construction combines parsers for sub-expressions into a
+parser for expressions containing them with a set of gluing operations. This
+implementation takes inspirations from:
+*** Parsec
+The original Haskell [[https://hackage.haskell.org/package/parsec][implementation]].
+
+*** parsec
+He Tao's [[https://pypi.python.org/pypi/parsec][implementation]] of Parsec.
+
+*** pysec
+Another [[http://www.valuedlessons.com/2008/02/pysec-monadic-combinatoric-parsing-in.html][approach]] with some interesting ideas.
+
+
+
