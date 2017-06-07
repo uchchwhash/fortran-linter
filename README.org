@@ -6,7 +6,7 @@ have a lot of those lying around.
 MIT
 
 * Testing
-Run `make test` from the root folder.
+Run ~make test~ from the root folder.
 
 * Prior art
 ** Fortran grammar
