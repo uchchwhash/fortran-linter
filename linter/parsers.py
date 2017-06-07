@@ -59,6 +59,9 @@ class Success(object):
 
 
 class AbstractParser(object):
+    """
+    A base class for parser objects.
+    """
 
     def scan(self, text, start=0):
         """
@@ -77,6 +80,7 @@ class AbstractParser(object):
         """
         @parser
         def inner(text, start):
+            """ The function doing the actual parsing. """
             success_self = self.scan(text, start)
             success_other = other.scan(text, success_self.end)
             return Success(text, start, success_other.end, success_other.value)
@@ -90,6 +94,7 @@ class AbstractParser(object):
         """ Apply self, apply other, return result of self (shortcut: <<). """
         @parser
         def inner(text, start):
+            """ The function doing the actual parsing. """
             success_self = self.scan(text, start)
             success_other = other.scan(text, success_self.end)
             return Success(text, start, success_other.end, success_self.value)
@@ -127,6 +132,7 @@ class AbstractParser(object):
         """ Labels a failure with `expected` (shortcut: %). """
         @parser(expected)
         def inner(text, start):
+            """ The function doing the actual parsing. """
             return self.scan(text, start)
         return inner
 
@@ -140,18 +146,21 @@ class AbstractParser(object):
         """
         @parser
         def inner(text, start):
+            """ The function doing the actual parsing. """
             success = self.scan(text, start)
             return Success(text, success.start, success.end,
                            function(success.value))
         return inner
 
     def __floordiv__(self, function):
-        '''// is shortcut for map'''
+        """ // is shortcut for map. """
         return self.map(function)
 
     def guard(self, predicate, desc):
+        """ Check if the parse result satisfies a `predicate`. """
         @parser
         def inner(text, start):
+            """ The function doing the actual parsing. """
             success = self.scan(text, start)
             if predicate(success.value):
                 return success
@@ -160,10 +169,13 @@ class AbstractParser(object):
         return inner
 
     def between(self, n, m):
-        '''parser that applies self between `n` and `m` times
-        and returns a list of values'''
+        """
+        A parser that applies `self` between `n` and `m` times
+        and returns a list of values.
+        """
         @parser
         def inner(text, start):
+            """ The function doing the actual parsing. """
             result = []
             count = 0
 
@@ -185,36 +197,38 @@ class AbstractParser(object):
         return inner
 
     def times(self, n):
-        '''match exactly `n` times (shortcut: *)
-        this is not the Kleene star (shortcut: ~)'''
+        """
+        Match exactly `n` times (shortcut: *).
+        This is not the Kleene star (shortcut: ~).
+        """
         return self.between(n, n)
 
     def __mul__(self, n):
-        '''* is shortcut for times'''
+        """ * is shortcut for times. """
         return self.times(n)
 
     def optional(self):
-        '''optionally matches self (shortcut: -)'''
+        """ Optionally matches `self` (shortcut: -). """
         return self.between(0, 1)
 
     def __neg__(self):
-        '''- is shortcut for optional'''
+        """ - is shortcut for optional. """
         return self.optional()
 
     def many(self):
-        '''matches zero or more occurrences (shortcut: ~)'''
+        """ Matches zero or more occurrences (shortcut: ~). """
         return self.between(0, float('inf'))
 
     def __invert__(self):
-        '''~ is shortcut for many'''
+        """ ~ is shortcut for many. """
         return self.many()
 
     def at_least_once(self):
-        '''matches self at least once (shortcut: +)'''
+        """ Matches self at least once (shortcut: prefix +). """
         return self.between(1, float('inf'))
 
     def __pos__(self):
-        '''+ is shortcut for at_least_once'''
+        """ + is shortcut for `at_least_once`. """
         return self.at_least_once()
 
 
@@ -250,6 +264,7 @@ def parser(param):
         expected = param
 
         def inner(this):
+            """ Convert `this` to a `ParsingFunction`. """
             return ParsingFunction(this, expected)
 
         return inner
@@ -266,6 +281,7 @@ def parser(param):
 
 
 def merge_parser_lists(this, that, kind):
+    """ Merge two lists containing parsers. """
     if isinstance(this, kind):
         if isinstance(that, kind):
             return this.parsers + that.parsers
@@ -279,6 +295,7 @@ def merge_parser_lists(this, that, kind):
 
 
 def merge_expected(this, that, conjunction):
+    """ Returns a description to be printed when parsing fails. """
     if this.expected is None:
         return that.expected
     elif that.expected is None:
@@ -288,6 +305,10 @@ def merge_expected(this, that, conjunction):
 
 
 class ChoiceNoBacktrackParser(AbstractParser):
+    """
+    A parser that matches any of a list of choices. Fails if any input is
+    consumed when trying out a choice that ultimately fails.
+    """
     def __init__(self, this, that):
         self.expected = merge_expected(this, that, " or ")
         self.parsers = merge_parser_lists(this, that, ChoiceNoBacktrackParser)
@@ -306,6 +327,10 @@ class ChoiceNoBacktrackParser(AbstractParser):
 
 
 class ChoiceParser(AbstractParser):
+    """
+    A parser that matches any of a list of choices. Backtracks
+    to the beginning of consumption in case of failure.
+    """
     def __init__(self, this, that):
         self.expected = merge_expected(this, that, " or ")
         self.parsers = merge_parser_lists(this, that, ChoiceParser)
@@ -321,6 +346,7 @@ class ChoiceParser(AbstractParser):
 
 
 class SequenceParser(AbstractParser):
+    """ A list of parsers to be applied sequentially. """
     def __init__(self, this, that):
         self.expected = merge_expected(this, that, " followed by ")
         self.parsers = merge_parser_lists(this, that, SequenceParser)
@@ -343,6 +369,7 @@ def fail(desc):
     """
     @parser(desc)
     def inner(text, start):
+        """ Fail unconditionally. """
         raise Failure(text, start, desc)
     return inner
 
@@ -355,6 +382,7 @@ def succeed(value):
     """
     @parser("never")
     def inner(text, start):
+        """ Succeed unconditionally. """
         return Success(text, start, start, value)
     return inner
 
@@ -363,6 +391,7 @@ def _EOF():
     """ Only matches EOF. """
     @parser("<EOF>")
     def inner(text, start):
+        """ Parse `None` when EOF, fail otherwise. """
         if start >= len(text):
             return Success(text, start, start, None)
         else:
