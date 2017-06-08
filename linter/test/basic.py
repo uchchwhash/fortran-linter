@@ -4,6 +4,7 @@ import unittest
 from .. import exact, Failure, EOF, singleton, succeed, regex
 from .. import spaces, word, digit, digits
 
+
 class TestBasic(unittest.TestCase):
     """ Basic test cases. """
     def setUp(self):
@@ -36,7 +37,6 @@ class TestBasic(unittest.TestCase):
 
         self.mismatch(exact("is"), text, repr("is"), 0)
 
-
     def test_succeed(self):
         """ Test the `succeed` parser that always succeeds. """
         text = "hello world"
@@ -53,7 +53,6 @@ class TestBasic(unittest.TestCase):
         self.match(test >> EOF, text, None, len(text))
 
         self.mismatch(exact("hello") >> EOF, text, "<EOF>", len("hello"))
-
 
     def test_choice_no_backtrack(self):
         """ Test alternative choices of parsers. """
@@ -88,7 +87,6 @@ class TestBasic(unittest.TestCase):
 
         self.mismatch(test, text, "planet", len("rising "))
 
-
     def test_map(self):
         """ Test mapping a function over the parse results. """
         text = "hello world"
@@ -121,7 +119,6 @@ class TestBasic(unittest.TestCase):
         test = ~exact("A") + +exact("D")
         self.mismatch(test, text, repr('D'), 4)
 
-
     def test_chars(self):
         """ Test simple tokenizers. """
         self.match(spaces, "    if    ", ' ' * 4, 4)
@@ -145,7 +142,6 @@ class TestBasic(unittest.TestCase):
         test = exact("email me at") >> spaces >> regex(r"(\w+)@(\w+)\.(\w+)")
         match = test.scan(text)
         self.assertEqual(match.value.groups(0), ("someone", "example", "com"))
-
 
 
 if __name__ == '__main__':

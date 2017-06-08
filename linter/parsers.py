@@ -105,7 +105,10 @@ class AbstractParser(object):
         return self.ignore_following(other)
 
     def choice_no_backtrack(self, other):
-        """ If self fails and does not consume anything, applies other (shortcut: ^). """
+        """
+        If self fails and does not consume anything,
+        applies other (shortcut: ^).
+        """
         return ChoiceNoBacktrackParser(self, other)
 
     def __xor__(self, other):
@@ -121,7 +124,10 @@ class AbstractParser(object):
         return self.choice(other)
 
     def seq(self, other):
-        """ Applies self, then applies other, and returns the sum of results (shortcut: +). """
+        """
+        Applies self, then applies other,
+        and returns the sum of results (shortcut: +).
+        """
         return SequenceParser(self, other)
 
     def __add__(self, other):
@@ -168,10 +174,10 @@ class AbstractParser(object):
                 raise Failure(text, start, desc)
         return inner
 
-    def between(self, n, m):
+    def between(self, minimum, maximum):
         """
-        A parser that applies `self` between `n` and `m` times
-        and returns a list of values.
+        A parser that applies `self` between `minimum`
+        and `maximum` times and returns a list of values.
         """
         @parser
         def inner(text, start):
@@ -181,7 +187,7 @@ class AbstractParser(object):
 
             current = start
 
-            while count < m:
+            while count < maximum:
                 try:
                     success = self.scan(text, current)
                     result += [success.value]
@@ -189,23 +195,23 @@ class AbstractParser(object):
                     count = count + 1
 
                 except Failure as failure:
-                    if count >= n:
+                    if count >= minimum:
                         break
                     raise failure
 
             return Success(text, start, current, result)
         return inner
 
-    def times(self, n):
+    def times(self, exact):
         """
-        Match exactly `n` times (shortcut: *).
+        Match `exact` number of times (shortcut: *).
         This is not the Kleene star (shortcut: ~).
         """
-        return self.between(n, n)
+        return self.between(exact, exact)
 
-    def __mul__(self, n):
+    def __mul__(self, exact):
         """ * is shortcut for times. """
-        return self.times(n)
+        return self.times(exact)
 
     def optional(self):
         """ Optionally matches `self` (shortcut: -). """
@@ -234,7 +240,8 @@ class AbstractParser(object):
 
 def parser(param):
     """
-    Construct a parser from either a given function object or a string to match.
+    Construct a parser from either a given function object
+    or a string to match.
     """
     class ParsingFunction(AbstractParser):
         """
@@ -242,8 +249,8 @@ def parser(param):
         """
         def __init__(self, this, expected):
             """
-            The function `this` should return a `Success` object if successful, or
-            raise a `Failure` exception if not.
+            The function `this` should return a `Success` object if successful,
+            or raise a `Failure` exception if not.
             """
             self.this = this
             self.expected = expected
@@ -387,7 +394,7 @@ def succeed(value):
     return inner
 
 
-def _EOF():
+def _eof():
     """ Only matches EOF. """
     @parser("<EOF>")
     def inner(text, start):
@@ -399,7 +406,7 @@ def _EOF():
     return inner
 
 
-EOF = _EOF()
+EOF = _eof()
 
 
 def singleton(string):

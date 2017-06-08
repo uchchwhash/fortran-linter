@@ -13,10 +13,12 @@ def inexact(string):
 
 
 def keyword(string):
+    """ Match a case-insensitive keyword. """
     return liberal(inexact(string))
 
 
 def sum_parsers(parsers):
+    """ Construct a sequential parser from a list of parsers. """
     result = succeed("")
 
     for this in parsers:
@@ -26,6 +28,7 @@ def sum_parsers(parsers):
 
 
 class Token(object):
+    """ Classification of tokens. """
     def __init__(self, tag, value):
         self.value = value
         self.tag = tag
@@ -35,16 +38,25 @@ class Token(object):
 
 
 def tag_token(tag):
+    """
+    Returns a function that wraps a value with
+    the specified `tag`.
+    """
     def inner(value):
+        """ The function that applies the `tag`. """
         return Token(tag, value)
     return inner
 
 
-def name_tokens(ls):
-    return [token.value.lower() for token in ls if token.tag == 'name']
+def name_tokens(list_of_tokens):
+    """ Only select the tokens that have the tag 'name'. """
+    return [token.value.lower()
+            for token in list_of_tokens
+            if token.tag == 'name']
 
 
 class Grammar(object):
+    """ Grammar specification of Fortran 77. """
     continuation_column = 5
     margin_column = continuation_column + 1
 
@@ -131,9 +143,9 @@ class Grammar(object):
     real = double | single
     comment = exact("!") + none_of("\n").many() // join
     equals, plus, minus, times, slash = [exact(c) for c in "=+-*/"]
-    lt, le, eq, ne, gt, ge = [term(c)
-                              for c in ['.lt.', '.le.', '.eq.',
-                                        '.ne.', '.gt.', '.ge.']]
+    lt_, le_, eq_, ne_, gt_, ge_ = [term(c)
+                                    for c in ['.lt.', '.le.', '.eq.',
+                                              '.ne.', '.gt.', '.ge.']]
     not_, and_, or_ = [term(c)
                        for c in ['.not.', '.and.', '.or.']]
     eqv, neqv = [term(c) for c in ['.eqv.', '.neqv.']]
@@ -145,12 +157,12 @@ class Grammar(object):
     single_token = (character // tag_token("character") |
                     comment // tag_token("comment") |
                     logical // tag_token("logical") |
-                    lt // tag_token("lt") |
-                    le // tag_token("le") |
-                    eq // tag_token("eq") |
-                    ne // tag_token("ne") |
-                    gt // tag_token("gt") |
-                    ge // tag_token("ge") |
+                    lt_ // tag_token("lt") |
+                    le_ // tag_token("le") |
+                    eq_ // tag_token("eq") |
+                    ne_ // tag_token("ne") |
+                    gt_ // tag_token("gt") |
+                    ge_ // tag_token("ge") |
                     not_ // tag_token("not") |
                     and_ // tag_token("and") |
                     or_ // tag_token("or") |
@@ -183,17 +195,23 @@ class Grammar(object):
 
 
 def outer_block(statement):
+    """ Returns a function that marks a block with `statement`. """
     def inner(children):
+        """ Wraps `children` in an `OuterBlock` marked as `statement`. """
         return OuterBlock(children, statement)
     return inner
 
 
 class OuterBlock(object):
+    """ Represents a block. Its children are blocks themselves. """
     def __init__(self, children, statement):
         self.children = children
         self.statement = statement
 
     def accept(self, visitor):
+        """
+        Accept a visitor by invoking its outer block processing function.
+        """
         return visitor.outer_block(self)
 
     def __repr__(self):
@@ -204,17 +222,22 @@ class OuterBlock(object):
 
 
 def inner_block(logical_lines):
+    """ Wraps a collection of logical lines into an `InnerBlock`. """
     return InnerBlock(logical_lines)
 
 
 class InnerBlock(object):
+    """ Represents the statements inside a block. """
     def __init__(self, logical_lines):
         statements = Grammar.statements
 
         @parser
         def if_block(text, start):
-            def new_style_if(ll):
-                then = [token for token in name_tokens(ll.tokens_after)
+            """ Process an `if` block or statement. """
+            def new_style_if(list_of_lines):
+                """ An `if` statement accompanied by a `then` keyword. """
+                then = [token
+                        for token in name_tokens(list_of_lines.tokens_after)
                         if token == 'then']
                 return len(then) > 0
 
@@ -229,9 +252,10 @@ class InnerBlock(object):
                      none_of_types([["end", "if"], ["else", "if"], ["else"]]))
             else_or_else_if = else_if_statement | else_statement
 
-            def inner_block_or_empty(ls):
-                if ls != []:
-                    return [inner_block(ls)]
+            def inner_block_or_empty(list_of_lines):
+                """ Wraps a list of lines in an `InnerBlock` if not empty. """
+                if list_of_lines != []:
+                    return [inner_block(list_of_lines)]
                 else:
                     return []
 
@@ -249,9 +273,11 @@ class InnerBlock(object):
 
         @parser
         def do_block(text, start):
-            def new_style_do(ll):
+            """ Process a `do` block. """
+            def new_style_do(list_of_lines):
+                """ A proper `do` block with `end do`. """
                 return not matches(keyword("do") + liberal(Grammar.label),
-                                   ll.code.lower())
+                                   list_of_lines.code.lower())
 
             do_statement = one_of_types([["do"]])
             end_do_statement = one_of_types([["end", "do"]])
@@ -277,6 +303,9 @@ class InnerBlock(object):
         self.children = block_or_line.many().parse(logical_lines)
 
     def accept(self, visitor):
+        """
+        Accept a visitor by invoking its inner block processing function.
+        """
         return visitor.inner_block(self)
 
     def __repr__(self):
@@ -287,6 +316,11 @@ class InnerBlock(object):
 
 
 class RawLine(object):
+    """
+    Represents a line in the source code.
+    Classifies whether the line is a comment,
+    an initial or a continuation line.
+    """
     def __init__(self, line):
         self.original = line
 
@@ -312,11 +346,13 @@ class RawLine(object):
 
         self.type = "initial"
 
+        # extract the statement label if applicable
         statement_label = lowered[:continuation_column]
         if len(statement_label.strip()) > 0:
             self.label = (liberal(Grammar.label) // int).parse(statement_label)
 
         def check(words):
+            """ See if the words match any known (sequence of) keywords. """
             msg = succeed(" ".join(words))
             parser_sum = sum_parsers([keyword(w) for w in words])
 
@@ -327,6 +363,8 @@ class RawLine(object):
                 self.statement = success.value
                 self.tokens_after = tokenizer.parse(self.code,
                                                     success.end)
+
+                # seems like a have a complete match
                 raise StopIteration()
             except Failure:
                 pass
@@ -340,6 +378,9 @@ class RawLine(object):
         self.statement = 'assignment'
 
     def accept(self, visitor):
+        """
+        Accept a visitor by invoking its raw line processing function.
+        """
         return visitor.raw_line(self)
 
     def __repr__(self):
@@ -350,6 +391,7 @@ class RawLine(object):
 
 
 class LogicalLine(object):
+    """ Represents a logical line. Continuation lines are merged. """
     def __init__(self, children):
         initial_line = [l for l in children if l.type == 'initial']
         assert len(initial_line) == 1
@@ -370,6 +412,9 @@ class LogicalLine(object):
         self.tokens_after = concat([l.tokens_after for l in code_lines])
 
     def accept(self, visitor):
+        """
+        Accept a visitor by invoking its logical line processing function.
+        """
         return visitor.logical_line(self)
 
     def __repr__(self):
@@ -380,7 +425,9 @@ class LogicalLine(object):
 
 
 def parse_into_logical_lines(lines):
+    """ Groups a set of raw lines into logical lines. """
     def of_type(type_name):
+        """ A parser that recognizes only a specific kind of raw line. """
         return satisfies(lambda l: l.type == type_name, type_name)
 
     comment, continuation, initial = (of_type(t)
@@ -394,9 +441,14 @@ def parse_into_logical_lines(lines):
 
 
 def parse_source(logical_lines):
+    """ Organizes a list of logical lines into blocks. """
     statements = Grammar.statements
 
     def top_level_block(kind, first_line_optional=False):
+        """
+        Parses a top level block: the main program,
+        a function, a subroutine or a block data.
+        """
         if first_line_optional:
             first_line = one_of_types([kind]).optional()
         else:
@@ -426,6 +478,7 @@ def parse_source(logical_lines):
 
 
 def one_of_list(names):
+    """ Readable representation of a list of alternatives. """
     if len(names) == 0:
         return "nothing"
     if len(names) == 1:
@@ -438,18 +491,21 @@ def one_of_list(names):
 
 
 def one_of_types(names):
+    """ Whether the statement belongs to any one of the given types. """
     return satisfies(lambda l: l.statement in [" ".join(name)
                                                for name in names],
                      one_of_list(names))
 
 
 def none_of_types(names):
+    """ Whether the statement belongs to none of the given types. """
     return satisfies(lambda l: l.statement not in [" ".join(name)
                                                    for name in names],
                      one_of_list(names))
 
 
 def remove_blanks(raw_lines):
+    """ Removes empty lines from a list of `RawLine` objects. """
     empty = satisfies(lambda l: matches(whitespace << EOF, l.original),
                       "empty line")
     remove = (+empty // (lambda ls: RawLine("\n")) | wildcard).many()
@@ -457,10 +513,13 @@ def remove_blanks(raw_lines):
 
 
 def new_comments(raw_lines):
+    """ Converts old style comments to new style ones. """
     def of_type(type_name):
+        """ Whether the line is of some particular type. """
         return satisfies(lambda l: l.type == type_name, type_name)
 
     def change_comment(line):
+        """ Replace old comment characters with '!'. """
         if matches(one_of("c*"), line.original):
             return RawLine("!" + line.original[1:])
         else:
@@ -471,27 +530,39 @@ def new_comments(raw_lines):
 
 
 class Visitor(object):
+    """
+    Template for implementors of the visitor pattern.
+    The default implementation just returns the original source code.
+    """
     def raw_line(self, line):
+        """ Process a raw line. """
         return [line.original]
 
     def logical_line(self, line):
+        """ Process a logical line with continuations taken into account. """
         return concat([l.accept(self) for l in line.children])
 
     def inner_block(self, block):
+        """ Process the inside lines of a block. """
         return concat([b.accept(self) for b in block.children])
 
     def outer_block(self, block):
+        """ Process lines including the bracketing ones for a block. """
         return concat([b.accept(self) for b in block.children])
 
     def top_level(self, block):
+        """ Process the top most level of a source file. """
         return "".join(block.accept(self))
 
 
 def indent(doc, indent_width=4):
+    """ Re-indent source code. """
     margin_column = Grammar.margin_column
 
     class Indent(Visitor):
+        """ Visitor implementation of re-indentation. """
         def __init__(self):
+            # current level of indentation
             self.current = 1
 
         def raw_line(self, line):
@@ -515,10 +586,14 @@ def indent(doc, indent_width=4):
 
 
 def plain(doc):
+    """ Basically no processing, just return the source code intact. """
     return Visitor().top_level(doc)
 
+
 def remove_comments(doc):
+    """ Remove comments from source code. """
     class Remove(Visitor):
+        """ Visitor implementation of comment removal. """
         def raw_line(self, line):
             if line.type == 'comment':
                 return []
@@ -527,8 +602,11 @@ def remove_comments(doc):
 
     return Remove().top_level(doc)
 
+
 def print_details(doc):
+    """ Print details of the parse tree for easy inspection. """
     class Details(Visitor):
+        """ Visitor implementation of details. """
         def __init__(self):
             self.level = 0
             self.statement = None
@@ -566,16 +644,28 @@ def print_details(doc):
 
 
 def read_file(filename):
-    with open(filename) as fl:
-        return [RawLine(line) for line in fl]
+    """
+    Read the contents of a file and convert it to a list of `RawLine`
+    objects.
+    """
+    with open(filename) as input_file:
+        return [RawLine(line) for line in input_file]
 
 
 def parse_file(filename):
+    """
+    Read the contents of a file and convert it to our internal
+    representation of nested blocks.
+    """
     return parse_source(parse_into_logical_lines(read_file(filename)))
 
 
 def reconstruct(unit):
+    """
+    Re-construct the source code from parsed representation.
+    """
     class Reconstruct(Visitor):
+        """ Visitor implementation of the reconstruction. """
         def raw_line(self, line):
             if line.type == 'comment':
                 return [line.original]
@@ -599,6 +689,7 @@ def reconstruct(unit):
 
 
 def collect_unit_names(source):
+    """ Return a collection of the defined names in the source code. """
     unit_names = []
 
     for unit in source.children:
@@ -613,9 +704,15 @@ def collect_unit_names(source):
 
 
 def analyze(source):
+    """
+    Analyze the source code and spit out detailed information about it.
+    """
     unit_names = collect_unit_names(source)
 
-    print 'units:', unit_names
+    print 'line numbers refer to the line number within the program unit'
+    print 'not counting blank lines'
+    print
+    print 'found program units:', unit_names
     print
 
     for unit in source.children:
@@ -623,10 +720,15 @@ def analyze(source):
 
 
 def mentioned_names(line):
+    """ The defined names that have been actually used in the program. """
     return [token for token in name_tokens(line.tokens_after)]
 
 
 def analyze_header(unit):
+    """
+    Extract information about the formal parameters
+    of a top-level block.
+    """
     first = unit.children[0]
 
     if isinstance(first, LogicalLine):
@@ -656,29 +758,40 @@ def analyze_header(unit):
 
 Interval = namedtuple('Interval', ['var', 'start', 'end'])
 
+
 def make_timeline(occur_dict):
+    """
+    Create a timeline from the occurrence information for the variables.
+    """
     occur_list = [Interval(var, occur_dict[var][0], occur_dict[var][-1])
                   for var in occur_dict if occur_dict[var] != []]
     return sorted(occur_list, key=lambda x: x.start)
 
+
 def draw_timeline(occur_list, last_line, graph_cols=60):
+    """
+    ASCII rendering of timeline information.
+    """
     def graph_pos(lineno):
+        """ Where in the timeline `lineno` should be. """
         return int(round((float(lineno) / last_line) * graph_cols))
 
     graph_list = [Interval(d.var, graph_pos(d.start), graph_pos(d.end))
                   for d in occur_list]
 
-    for d in graph_list:
-        print "{:10s}|{}{}{}|".format(str(d.var),
-                                      " " * d.start,
-                                      "=" * (d.end - d.start + 1),
-                                      " " * (graph_cols - d.end))
+    for period in graph_list:
+        print "{:10s}|{}{}{}|".format(str(period.var),
+                                      " " * period.start,
+                                      "=" * (period.end - period.start + 1),
+                                      " " * (graph_cols - period.end))
 
     print
 
 
 def analyze_labels(unit, main_block):
+    """ Analyze label information. """
     class Label(Visitor):
+        """ Visitor implemention of collection of labels. """
         def __init__(self):
             self.current_line = 0
 
@@ -703,6 +816,7 @@ def analyze_labels(unit, main_block):
 
     for decl_line, lbl in labels:
         class Occurrences(Visitor):
+            """ Visitor implementation of occurrence check for labels. """
             def __init__(self):
                 self.current_line = 0
 
@@ -721,7 +835,8 @@ def analyze_labels(unit, main_block):
         main_block.accept(Occurrences())
 
     for decl_line, lbl in labels:
-        print lbl, '@' + str(decl_line), occur_dict[lbl]
+        print lbl, 'defined at: ' + str(decl_line),
+        print 'occurred at: ', occur_dict[lbl]
         occur_dict[lbl] = sorted(occur_dict[lbl] + [decl_line])
     print
 
@@ -729,7 +844,9 @@ def analyze_labels(unit, main_block):
 
 
 def analyze_variables(unit, unit_names, formal_params, main_block):
+    """ Analyze variable usage information. """
     class Variables(Visitor):
+        """ Collect mentions of variable names. """
         def logical_line(self, line):
             if line.statement == 'format':
                 return []
@@ -741,6 +858,7 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
              for s in Grammar.statements["specification"]]
 
     class Locals(Visitor):
+        """ Collect local variable declarations. """
         def logical_line(self, line):
             if line.statement not in specs:
                 return []
@@ -762,10 +880,10 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
                            set(keywords) - set(Grammar.intrinsics) -
                            set(unit_names))
     if unaccounted_for:
-        print 'unaccounted_for:', unaccounted_for
+        print 'unaccounted for:', unaccounted_for
         print
 
-    concern = list(set(local_variables + unaccounted_for))
+    concern = list(set(local_variables + formal_params + unaccounted_for))
 
     occur_dict = defaultdict(list)
 
@@ -787,14 +905,16 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
 
         main_block.accept(Occurrences())
 
-    never_occur_list = sorted([var for var in concern if occur_dict[var] == []])
+    never_occur_list = sorted([var
+                               for var in concern
+                               if occur_dict[var] == []])
 
     if never_occur_list:
         print 'never occurred:', never_occur_list
         print
 
     for var in occur_dict:
-        print var, occur_dict[var]
+        print var, 'occurred at: ', occur_dict[var]
 
     draw_timeline(make_timeline(occur_dict), last_line[0])
 
@@ -823,6 +943,19 @@ def _argument_parser_():
 
 
 def main():
+    """
+    The main entry point for the executable.
+    Performs the task specified. Possible tasks are:
+        - plain: echo the source file lines back, basically a no-op
+        - remove-comments: remove all comments from source code
+        - remove-blanks: remove blank lines from source code
+        - indent: re-indent source code
+        - print-details: detailed information about the structure
+        - new-comments: convert old style comments to new (Fortran 90) style
+        - reconstruct: try and reconstruct the source code from the nested
+        structure
+        - analyze: detailed analysis and linting of the code
+    """
     arg_parser = _argument_parser_()
     args = arg_parser.parse_args()
 
