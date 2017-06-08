@@ -253,8 +253,8 @@ def parser(param):
         """
         def __init__(self, this, expected):
             """
-            The function `this` should return a :class:`Success` object if successful,
-            or raise a :class:`Failure` exception if not.
+            The function `this` should return a :class:`Success` object
+            if successful, or raise a :class:`Failure` exception if not.
             """
             self.this = this
             self.expected = expected

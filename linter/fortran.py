@@ -224,7 +224,10 @@ class Grammar(object):
 def outer_block(statement):
     """ Returns a function that marks a block with `statement`. """
     def inner(children):
-        """ Wraps `children` in an :class:`OuterBlock` marked as `statement`. """
+        """
+        Wraps `children` in an :class:`OuterBlock`
+        marked as `statement`.
+        """
         return OuterBlock(children, statement)
     return inner
 
@@ -280,7 +283,10 @@ class InnerBlock(object):
             else_or_else_if = else_if_statement | else_statement
 
             def inner_block_or_empty(list_of_lines):
-                """ Wraps a list of lines in an :class:`InnerBlock` if not empty. """
+                """
+                Wraps a list of lines in an :class:`InnerBlock`
+                if not already empty.
+                """
                 if list_of_lines != []:
                     return [inner_block(list_of_lines)]
                 else:
