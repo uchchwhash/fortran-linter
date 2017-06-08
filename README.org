@@ -13,6 +13,7 @@ python -m linter.fortran analyze sample.f
 #+END_SRC
 
 for an analysis of label and variable usage in a sample legacy source file.
+See documentation for a list of other tasks ~linter.fortran~ can perform.
 
 * Automated testing
 Run ~make test~ from the root folder.
