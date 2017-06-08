@@ -5,10 +5,7 @@ have a lot of those lying around.
 * License
 MIT
 
-* Testing
-Run ~make test~ from the root folder.
-
-* Run
+* Running the program
 From the root folder, run
 
 #+BEGIN_SRC bash
@@ -16,6 +13,9 @@ python -m linter.fortran analyze sample.f
 #+END_SRC
 
 for an analysis of label and variable usage in a sample legacy source file.
+
+* Automated testing
+Run ~make test~ from the root folder.
 
 * TODO Sphinx
 

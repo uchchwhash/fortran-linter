@@ -788,7 +788,7 @@ def draw_timeline(occur_list, last_line, graph_cols=60):
     print
 
 
-def analyze_labels(unit, main_block):
+def analyze_labels(main_block):
     """ Analyze label information. """
     class Label(Visitor):
         """ Visitor implemention of collection of labels. """
@@ -843,7 +843,7 @@ def analyze_labels(unit, main_block):
     draw_timeline(make_timeline(occur_dict), last_line[0])
 
 
-def analyze_variables(unit, unit_names, formal_params, main_block):
+def analyze_variables(unit_names, formal_params, main_block):
     """ Analyze variable usage information. """
     class Variables(Visitor):
         """ Collect mentions of variable names. """
@@ -889,21 +889,23 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
 
     last_line = [0]
 
+    class Occurrences(Visitor):
+        """ Collect occurrence information for variables. """
+        def __init__(self, var):
+            self.current_line = 0
+            self.var = var
+
+        def logical_line(self, line):
+            self.current_line += 1
+            last_line[0] = self.current_line
+            if line.statement not in specs:
+                if self.var in name_tokens(line.tokens_after):
+                    occur_dict[self.var].append(self.current_line)
+
+            return []
+
     for var in concern:
-        class Occurrences(Visitor):
-            def __init__(self):
-                self.current_line = 0
-
-            def logical_line(self, line):
-                self.current_line += 1
-                last_line[0] = self.current_line
-                if line.statement not in specs:
-                    if var in name_tokens(line.tokens_after):
-                        occur_dict[var].append(self.current_line)
-
-                return []
-
-        main_block.accept(Occurrences())
+        main_block.accept(Occurrences(var))
 
     never_occur_list = sorted([var
                                for var in concern
@@ -920,14 +922,14 @@ def analyze_variables(unit, unit_names, formal_params, main_block):
 
 
 def analyze_unit(unit, unit_names):
+    """ Analyze a unit for labels and variables. """
     statement, program_name, formal_params, main_block = analyze_header(unit)
 
     print statement, program_name, formal_params
     print
 
-    analyze_labels(unit, main_block)
-
-    analyze_variables(unit, unit_names, formal_params, main_block)
+    analyze_labels(main_block)
+    analyze_variables(unit_names, formal_params, main_block)
 
 
 def _argument_parser_():
