@@ -21,7 +21,7 @@ def location(text, index):
 
 
 class Failure(Exception):
-    """ Represents parsing failure. Can be raised as an `Exception`. """
+    """ Represents parsing failure. Can be raised as an :class:`Exception`. """
     def __init__(self, text, start, expected):
         self.text = text
         self.start = start
@@ -66,7 +66,7 @@ class AbstractParser(object):
     def scan(self, text, start=0):
         """
         A virtual method that subclasses should override.
-        Returns a `Success` object or raises `Failure`.
+        Returns a :class:`Success` object or raises :class:`Failure`.
         """
         raise NotImplementedError("scan not implemented in AbstractParser")
 
@@ -76,7 +76,7 @@ class AbstractParser(object):
 
     def ignore(self, other):
         """
-        Apply self, ignore result, and apply other (shortcut: >>).
+        Apply `self`, ignore result, and apply `other` (shortcut: ``>>``).
         """
         @parser
         def inner(text, start):
@@ -87,11 +87,14 @@ class AbstractParser(object):
         return inner
 
     def __rshift__(self, other):
-        """ >> is shortcut for ignore. """
+        """ ``>>`` is shortcut for `ignore`. """
         return self.ignore(other)
 
     def ignore_following(self, other):
-        """ Apply self, apply other, return result of self (shortcut: <<). """
+        """
+        Apply `self`, apply `other`, return result of `self`
+        (shortcut: ``<<``).
+        """
         @parser
         def inner(text, start):
             """ The function doing the actual parsing. """
@@ -101,41 +104,41 @@ class AbstractParser(object):
         return inner
 
     def __lshift__(self, other):
-        """ << is shortcut for ignore_following. """
+        """ ``<<`` is shortcut for `ignore_following`. """
         return self.ignore_following(other)
 
     def choice_no_backtrack(self, other):
         """
-        If self fails and does not consume anything,
-        applies other (shortcut: ^).
+        If `self` fails and does not consume anything,
+        applies `other` (shortcut: ``^``).
         """
         return ChoiceNoBacktrackParser(self, other)
 
     def __xor__(self, other):
-        """ ^ is shortcut for `choice_no_backtrack`. """
+        """ ``^`` is shortcut for `choice_no_backtrack`. """
         return self.choice_no_backtrack(other)
 
     def choice(self, other):
-        """ If self fails, applies other (shortcut: |). """
+        """ If `self` fails, applies `other` (shortcut: ``|``). """
         return ChoiceParser(self, other)
 
     def __or__(self, other):
-        """ | is shortcut for `choice`. """
+        """ ``|`` is shortcut for `choice`. """
         return self.choice(other)
 
     def seq(self, other):
         """
-        Applies self, then applies other,
-        and returns the sum of results (shortcut: +).
+        Applies `self`, then applies `other`,
+        and returns the sum of results (shortcut: ``+``).
         """
         return SequenceParser(self, other)
 
     def __add__(self, other):
-        """ + is shortcut for `seq`. """
+        """ ``+`` is shortcut for `seq`. """
         return self.seq(other)
 
     def label(self, expected):
-        """ Labels a failure with `expected` (shortcut: %). """
+        """ Labels a failure with `expected` (shortcut: ``%``). """
         @parser(expected)
         def inner(text, start):
             """ The function doing the actual parsing. """
@@ -143,12 +146,13 @@ class AbstractParser(object):
         return inner
 
     def __mod__(self, expected):
-        """ % is shortcut for `label`. """
+        """ ``%`` is shortcut for `label`. """
         return self.label(expected)
 
     def map(self, function):
         """
-        A parser that applies `function` on the result of self (shortcut: //).
+        A parser that applies `function` on the result of `self`
+        (shortcut: ``//``).
         """
         @parser
         def inner(text, start):
@@ -159,7 +163,7 @@ class AbstractParser(object):
         return inner
 
     def __floordiv__(self, function):
-        """ // is shortcut for map. """
+        """ ``//`` is shortcut for `map`. """
         return self.map(function)
 
     def guard(self, predicate, desc):
@@ -204,37 +208,37 @@ class AbstractParser(object):
 
     def times(self, exact):
         """
-        Match `exact` number of times (shortcut: *).
-        This is not the Kleene star (shortcut: ~).
+        Match `exact` number of times (shortcut: ``*``).
+        This is not the Kleene star (shortcut: ``~``).
         """
         return self.between(exact, exact)
 
     def __mul__(self, exact):
-        """ * is shortcut for times. """
+        """ ``*`` is shortcut for `times`. """
         return self.times(exact)
 
     def optional(self):
-        """ Optionally matches `self` (shortcut: -). """
+        """ Optionally matches `self` (shortcut: ``-``). """
         return self.between(0, 1)
 
     def __neg__(self):
-        """ - is shortcut for optional. """
+        """ ``-`` is shortcut for `optional`. """
         return self.optional()
 
     def many(self):
-        """ Matches zero or more occurrences (shortcut: ~). """
+        """ Matches zero or more occurrences (shortcut: ``~``). """
         return self.between(0, float('inf'))
 
     def __invert__(self):
-        """ ~ is shortcut for many. """
+        """ ``~`` is shortcut for `many`. """
         return self.many()
 
     def at_least_once(self):
-        """ Matches self at least once (shortcut: prefix +). """
+        """ Matches self at least once (shortcut: prefix ``+``). """
         return self.between(1, float('inf'))
 
     def __pos__(self):
-        """ + is shortcut for `at_least_once`. """
+        """ ``+`` is shortcut for `at_least_once`. """
         return self.at_least_once()
 
 
@@ -249,8 +253,8 @@ def parser(param):
         """
         def __init__(self, this, expected):
             """
-            The function `this` should return a `Success` object if successful,
-            or raise a `Failure` exception if not.
+            The function `this` should return a :class:`Success` object if successful,
+            or raise a :class:`Failure` exception if not.
             """
             self.this = this
             self.expected = expected
@@ -271,7 +275,7 @@ def parser(param):
         expected = param
 
         def inner(this):
-            """ Convert `this` to a `ParsingFunction`. """
+            """ Convert `this` to a :class:`ParsingFunction`. """
             return ParsingFunction(this, expected)
 
         return inner
@@ -385,7 +389,7 @@ def succeed(value):
     """
     A parser which always succeeds without consuming input
     and returns given `value`.
-    Equivalent to `return` in Haskell.
+    Equivalent to ``return`` in Haskell.
     """
     @parser("never")
     def inner(text, start):
@@ -406,6 +410,7 @@ def _eof():
     return inner
 
 
+#: a parser to detect EOF
 EOF = _eof()
 
 

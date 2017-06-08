@@ -51,24 +51,34 @@ def none_of(chars):
     return satisfies(lambda c: c not in chars, "none of {}".format(chars))
 
 
+#: succeeds for any character
 wildcard = satisfies(lambda c: True, "")
 
+#: matches a space character
 space = satisfies(lambda c: c.isspace(), "whitespace")
 
+#: matches whitespace
 spaces = (+space // join) % "whitespaces"
 
+#: matches optional whitespace
 whitespace = (~space // join) % "optional whitespace"
 
+#: matches a letter
 letter = satisfies(lambda c: c.isalpha(), "letter")
 
+#: matches a word
 word = (+letter // join) % "word"
 
+#: matches a digit
 digit = satisfies(lambda c: c.isdigit(), "digit")
 
+#: matches a list of digits
 digits = (+digit // join) % "digits"
 
+#: matches one alphanumeric character
 alphanumeric = satisfies(lambda c: c.isalnum(), "alphanumeric")
 
+#: matches multiple alphanumeric characters
 alphanumerics = (+alphanumeric // join) % "alphanumerics"
 
 

@@ -57,9 +57,13 @@ def name_tokens(list_of_tokens):
 
 class Grammar(object):
     """ Grammar specification of Fortran 77. """
+    #: position of column where the continuation mark should be
     continuation_column = 5
+
+    #: starting column for code
     margin_column = continuation_column + 1
 
+    #: classification of statements
     statements = {}
     statements["control nonblock"] = [['go', 'to'], ['call'], ['return'],
                                       ['continue'], ['stop'], ['pause']]
@@ -105,6 +109,7 @@ class Grammar(object):
     statements["all"] = (statements["executable"] +
                          statements["non-executable"])
 
+    #: intrinsic functions
     intrinsics = ['abs', 'acos', 'aimag', 'aint', 'alog',
                   'alog10', 'amax10', 'amax0', 'amax1', 'amin0',
                   'amin1', 'amod', 'anint', 'asin', 'atan',
@@ -123,37 +128,58 @@ class Grammar(object):
                   'sign', 'sin', 'sinh', 'sngl', 'sqrt', 'tan', 'tanh',
                   'matmul', 'cycle']
 
+    #: one word
     term = inexact
 
+    #: valid Fortran identifier
     name = letter + alphanumeric.many() // join
+    #: statement label
     label = digit.between(1, 5) // join
+    #: integer literal
     integer = (one_of("+-").optional() + +digit) // join
+    #: logical literal
     logical = term(".true.") | term(".false.")
+    #: character literal segment
     char_segment = ((term('"') + none_of('"').many() // join + term('"')) |
                     (term("'") + none_of("'").many() // join + term("'")))
 
+    #: character literal (string)
     character = (+char_segment) // join
+    #: basic real number
     basic_real = (one_of("+-").optional() + +digit +
                   exact(".") // singleton + digit.many()) // join
+    #: single precision exponent part
     single_exponent = one_of("eE") + integer
+    #: single precision real
     single = ((basic_real + single_exponent.optional() // join) |
               (integer + single_exponent))
+    #: double precision exponent part
     double_exponent = one_of("dD") + integer
+    #: double precision real
     double = (basic_real | integer) + double_exponent
+    #: real number literal
     real = double | single
+    #: comment line
     comment = exact("!") + none_of("\n").many() // join
+    #: arithmetic operators
     equals, plus, minus, times, slash = [exact(c) for c in "=+-*/"]
+    #: comparison operators
     lt_, le_, eq_, ne_, gt_, ge_ = [term(c)
                                     for c in ['.lt.', '.le.', '.eq.',
                                               '.ne.', '.gt.', '.ge.']]
+    #: logical operators
     not_, and_, or_ = [term(c)
                        for c in ['.not.', '.and.', '.or.']]
+    #: more logical operators
     eqv, neqv = [term(c) for c in ['.eqv.', '.neqv.']]
     lparen, rparen, dot, comma, dollar = [exact(c) for c in "().,$"]
     apostrophe, quote, colon, langle, rangle = [exact(c) for c in "'\":<>"]
+    #: exponentiation operator
     exponent = exact("**")
+    #: string concatenation operator
     concatenation = exact("//")
 
+    #: one single token
     single_token = (character // tag_token("character") |
                     comment // tag_token("comment") |
                     logical // tag_token("logical") |
@@ -191,19 +217,20 @@ class Grammar(object):
                     spaces // tag_token("whitespace") |
                     wildcard // tag_token("unknown"))
 
+    #: list of tokens
     tokenizer = (single_token).many()
 
 
 def outer_block(statement):
     """ Returns a function that marks a block with `statement`. """
     def inner(children):
-        """ Wraps `children` in an `OuterBlock` marked as `statement`. """
+        """ Wraps `children` in an :class:`OuterBlock` marked as `statement`. """
         return OuterBlock(children, statement)
     return inner
 
 
 class OuterBlock(object):
-    """ Represents a block. Its children are blocks themselves. """
+    """ Represents a block. Its children are inner blocks. """
     def __init__(self, children, statement):
         self.children = children
         self.statement = statement
@@ -222,7 +249,7 @@ class OuterBlock(object):
 
 
 def inner_block(logical_lines):
-    """ Wraps a collection of logical lines into an `InnerBlock`. """
+    """ Wraps a collection of logical lines into an :class:`InnerBlock`. """
     return InnerBlock(logical_lines)
 
 
@@ -233,9 +260,9 @@ class InnerBlock(object):
 
         @parser
         def if_block(text, start):
-            """ Process an `if` block or statement. """
+            """ Process an ``if`` block or statement. """
             def new_style_if(list_of_lines):
-                """ An `if` statement accompanied by a `then` keyword. """
+                """ An ``if`` statement accompanied by a ``then`` keyword. """
                 then = [token
                         for token in name_tokens(list_of_lines.tokens_after)
                         if token == 'then']
@@ -253,7 +280,7 @@ class InnerBlock(object):
             else_or_else_if = else_if_statement | else_statement
 
             def inner_block_or_empty(list_of_lines):
-                """ Wraps a list of lines in an `InnerBlock` if not empty. """
+                """ Wraps a list of lines in an :class:`InnerBlock` if not empty. """
                 if list_of_lines != []:
                     return [inner_block(list_of_lines)]
                 else:
@@ -273,9 +300,9 @@ class InnerBlock(object):
 
         @parser
         def do_block(text, start):
-            """ Process a `do` block. """
+            """ Process a ``do`` block. """
             def new_style_do(list_of_lines):
-                """ A proper `do` block with `end do`. """
+                """ A proper ``do`` block with ``end do``. """
                 return not matches(keyword("do") + liberal(Grammar.label),
                                    list_of_lines.code.lower())
 
@@ -505,7 +532,7 @@ def none_of_types(names):
 
 
 def remove_blanks(raw_lines):
-    """ Removes empty lines from a list of `RawLine` objects. """
+    """ Removes empty lines from a list of :class:`RawLine` objects. """
     empty = satisfies(lambda l: matches(whitespace << EOF, l.original),
                       "empty line")
     remove = (+empty // (lambda ls: RawLine("\n")) | wildcard).many()
@@ -645,7 +672,7 @@ def print_details(doc):
 
 def read_file(filename):
     """
-    Read the contents of a file and convert it to a list of `RawLine`
+    Read the contents of a file and convert it to a list of :class:`RawLine`
     objects.
     """
     with open(filename) as input_file:
@@ -948,15 +975,23 @@ def main():
     """
     The main entry point for the executable.
     Performs the task specified. Possible tasks are:
-        - plain: echo the source file lines back, basically a no-op
-        - remove-comments: remove all comments from source code
-        - remove-blanks: remove blank lines from source code
-        - indent: re-indent source code
-        - print-details: detailed information about the structure
-        - new-comments: convert old style comments to new (Fortran 90) style
-        - reconstruct: try and reconstruct the source code from the nested
-        structure
-        - analyze: detailed analysis and linting of the code
+
+    - ``plain``: echo the source file lines back, basically a no-op
+
+    - ``remove-comments``: remove all comments from source code
+
+    - ``remove-blanks``: remove blank lines from source code
+
+    - ``indent``: re-indent source code
+
+    - ``print-details``: detailed information about the structure
+
+    - ``new-comments``: convert old style comments to new (Fortran 90) style
+
+    - ``reconstruct``: try and reconstruct the source code from the nested
+      structure
+
+    - ``analyze``: detailed analysis and linting of the code
     """
     arg_parser = _argument_parser_()
     args = arg_parser.parse_args()
